@@ -7,6 +7,7 @@ import {
   type ForecastOutcome,
 } from "@/app/calibration";
 import { ensureLabSchema } from "@/db/runtime";
+import { FOUNDER_DIMENSIONS, FOUNDER_SOURCE_TYPES } from "@/app/founderEvidence";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,12 @@ const recordRequirements: Record<string, string[]> = {
     "trigger", "firstOrder", "secondOrder", "thirdOrder", "bottlenecks", "incentives", "suppliers",
     "customers", "substitutes", "regulation", "adjacentEffects",
     "disconfirmingEvidence",
+  ],
+  founder_evidence_review: [
+    "company", "founderName", "sourceType", "sourceUrlOrContext", "sourceDate",
+    "sourceLimitations", "privacyBoundary", "dimensions", "charismaCheck",
+    "counterEvidence", "provisionalJudgment", "confidence", "nextQuestion",
+    "behavioralPrediction", "timezone",
   ],
   weekly_underwrite: [
     "snapshotId", "selectionReason", "questions", "evidenceLedger",
@@ -127,6 +134,73 @@ function validatePayload(recordType: string, payload: Record<string, unknown>): 
     if (!isCanonicalDate(payload.resolutionDate)) return "The Forecast needs a real resolution date in YYYY-MM-DD format.";
     if (!isValidTimeZone(payload.timezone)) return "The Forecast needs a valid preserved timezone.";
     if (!safeHttpUrl(payload.resolutionSource)) return "The Forecast needs a valid resolution source.";
+  }
+  if (recordType === "founder_evidence_review") {
+    const allowedFounderKeys = new Set([
+      "linkedSnapshotId", "company", "founderName", "sourceType", "sourceUrlOrContext",
+      "sourceDate", "sourceLimitations", "privacyBoundary", "privateEvidenceConfirmed",
+      "dimensions", "charismaCheck", "counterEvidence", "provisionalJudgment", "confidence",
+      "nextQuestion", "behavioralPrediction", "timezone",
+    ]);
+    if (hasValue(payload.score) || hasValue(payload.founderScore)) {
+      return "Founder Evidence is not a weighted founder score.";
+    }
+    if (Object.keys(payload).some((key) => !allowedFounderKeys.has(key))) {
+      return "Founder Evidence contains an undeclared field; ratings, transcripts, and extra private material are not preserved.";
+    }
+    const founderTextLimits: Array<[string, number]> = [
+      ["company", 180], ["founderName", 180], ["sourceUrlOrContext", 2000],
+      ["sourceLimitations", 5000], ["privacyBoundary", 5000], ["charismaCheck", 5000],
+      ["counterEvidence", 5000], ["provisionalJudgment", 5000], ["nextQuestion", 5000],
+      ["behavioralPrediction", 5000],
+    ];
+    if (founderTextLimits.some(([key, limit]) => typeof payload[key] !== "string" || String(payload[key]).trim().length > limit)) {
+      return "Founder Evidence fields must contain bounded written evidence.";
+    }
+    if (!(FOUNDER_SOURCE_TYPES as readonly string[]).includes(cleanText(payload.sourceType, 80))) {
+      return "Choose a valid Founder Evidence source type.";
+    }
+    if (!isCanonicalDate(payload.sourceDate)) return "Founder Evidence needs a real observation date.";
+    if (!isValidTimeZone(payload.timezone)) return "Founder Evidence needs a valid preserved timezone.";
+    if (payload.sourceDate > dateInTimeZone(new Date(), payload.timezone)) return "Founder Evidence cannot be dated in the future.";
+    if (payload.sourceType === "Public interview" && !safeHttpUrl(payload.sourceUrlOrContext)) {
+      return "A public Founder Evidence source needs a valid original URL.";
+    }
+    if (payload.sourceType !== "Public interview" && String(payload.sourceUrlOrContext).length > 1000) {
+      return "Private Founder Evidence should preserve concise context, not a raw transcript.";
+    }
+    if (payload.sourceType !== "Public interview" && payload.privateEvidenceConfirmed !== true) {
+      return "Private Founder Evidence requires confirmation that only consented behavioral evidence is preserved.";
+    }
+    const confidence = Number(payload.confidence);
+    if (!Number.isFinite(confidence) || confidence < 1 || confidence > 99) {
+      return "Founder Evidence confidence must be between 1% and 99%.";
+    }
+    const dimensions = payload.dimensions;
+    if (!Array.isArray(dimensions) || dimensions.length !== FOUNDER_DIMENSIONS.length || dimensions.some((item) => !isObject(item))) {
+      return "Founder Evidence Review must cover all six behavior dimensions.";
+    }
+    const expectedDimensions = new Set(FOUNDER_DIMENSIONS.map((dimension) => dimension.key));
+    const actualDimensions = new Set(dimensions.map((item) => cleanText((item as Record<string, unknown>).dimension, 80)));
+    if (actualDimensions.size !== expectedDimensions.size || [...expectedDimensions].some((dimension) => !actualDimensions.has(dimension))) {
+      return "Founder Evidence Review must cover all six behavior dimensions exactly once.";
+    }
+    for (const item of dimensions as Record<string, unknown>[]) {
+      const direction = cleanText(item.direction, 20);
+      const allowedDimensionKeys = new Set(["dimension", "direction", "observation", "inference"]);
+      if (
+        Object.keys(item).some((key) => !allowedDimensionKeys.has(key))
+        || !new Set(["supports", "weakens", "gap"]).has(direction)
+        || typeof item.observation !== "string"
+        || typeof item.inference !== "string"
+        || !item.observation.trim()
+        || !item.inference.trim()
+        || item.observation.length > 5000
+        || item.inference.length > 5000
+      ) {
+        return "Every Founder Evidence dimension needs a direction, observed behavior or explicit gap, and a limited inference.";
+      }
+    }
   }
   if (recordType === "weekly_underwrite") {
     const questions = payload.questions;
@@ -482,10 +556,37 @@ export async function POST(request: Request) {
 
     if (parentId) {
       const parent = await db
-        .prepare("SELECT id FROM lab_records WHERE id = ? AND owner_id = ?")
+        .prepare("SELECT id, record_type, payload_json FROM lab_records WHERE id = ? AND owner_id = ?")
         .bind(parentId, owner)
-        .first<{ id: string }>();
+        .first<{ id: string; record_type: string; payload_json: string }>();
       if (!parent) return Response.json({ error: "The linked record was not found." }, { status: 404 });
+      if (new Set(["founder_evidence_review", "weekly_underwrite"]).has(recordType) && parent.record_type !== "snapshot_judgment") {
+        return Response.json({ error: "Founder Evidence Reviews and Underwrites must link to a Snapshot Judgment." }, { status: 400 });
+      }
+      if (recordType === "founder_evidence_review") {
+        const founderCompany = cleanText(payload.company, 180).toLowerCase();
+        const snapshotCompany = cleanText(parseJson(parent.payload_json).company, 180).toLowerCase();
+        if (!founderCompany || founderCompany !== snapshotCompany) {
+          return Response.json({ error: "The Founder Evidence Review company must match its linked Snapshot." }, { status: 400 });
+        }
+      }
+    }
+    if (recordType === "founder_evidence_review" && cleanText(payload.linkedSnapshotId, 80) !== (parentId ?? "")) {
+      return Response.json({ error: "The Founder Evidence Review Snapshot link is inconsistent." }, { status: 400 });
+    }
+    if (recordType === "weekly_underwrite" && cleanText(payload.snapshotId, 80) !== (parentId ?? "")) {
+      return Response.json({ error: "The Weekly Underwrite Snapshot link is inconsistent." }, { status: 400 });
+    }
+    if (recordType === "weekly_underwrite" && hasValue(payload.founderReviewId)) {
+      const founderReviewId = cleanText(payload.founderReviewId, 80);
+      const founderReview = await db
+        .prepare("SELECT id, parent_id FROM lab_records WHERE id = ? AND owner_id = ? AND record_type = 'founder_evidence_review'")
+        .bind(founderReviewId, owner)
+        .first<{ id: string; parent_id: string | null }>();
+      if (!founderReview) return Response.json({ error: "The linked Founder Evidence Review was not found." }, { status: 404 });
+      if (founderReview.parent_id !== parentId) {
+        return Response.json({ error: "The Founder Evidence Review belongs to a different company Snapshot." }, { status: 400 });
+      }
     }
 
     const id = crypto.randomUUID();
@@ -502,10 +603,23 @@ export async function POST(request: Request) {
       return Response.json({ error: "Choose a record, update type, and valid update body." }, { status: 400 });
     }
     const parent = await db
-      .prepare("SELECT id FROM lab_records WHERE id = ? AND owner_id = ?")
+      .prepare("SELECT id, record_type FROM lab_records WHERE id = ? AND owner_id = ?")
       .bind(recordId, owner)
-      .first<{ id: string }>();
+      .first<{ id: string; record_type: string }>();
     if (!parent) return Response.json({ error: "The record was not found." }, { status: 404 });
+    if (parent.record_type === "founder_evidence_review") {
+      const allowedFounderEventKeys = new Set(["text", "originalPreserved", "privateEvidenceConfirmed"]);
+      if (
+        Object.keys(eventData).some((key) => !allowedFounderEventKeys.has(key))
+        || typeof eventData.text !== "string"
+        || !eventData.text.trim()
+        || eventData.text.length > 5000
+        || eventData.originalPreserved !== true
+        || eventData.privateEvidenceConfirmed !== true
+      ) {
+        return Response.json({ error: "Founder Evidence updates require a concise behavioral note, preservation marker, and privacy confirmation; transcripts, ratings, and undeclared fields are rejected." }, { status: 400 });
+      }
+    }
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();

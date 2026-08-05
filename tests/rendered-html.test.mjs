@@ -3,7 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("builds the complete Venture Judgment Lab learning surface", async () => {
-  const [layout, app, api, brief, practice, runtime, calibration] = await Promise.all([
+  const [layout, app, api, brief, practice, runtime, calibration, founder] = await Promise.all([
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/LabApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/lab/route.ts", import.meta.url), "utf8"),
@@ -11,6 +11,7 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
     readFile(new URL("../records/sustainable-weekly-practice-architecture-2026-08-05.md", import.meta.url), "utf8"),
     readFile(new URL("../db/runtime.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/calibration.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/founderEvidence.ts", import.meta.url), "utf8"),
     access(new URL("../dist/server/index.js", import.meta.url)),
   ]);
 
@@ -25,6 +26,17 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(app, /Calibration Review/);
   assert.match(app, /Brier score/);
   assert.match(app, /Analytical mistakes/);
+  assert.match(app, /Founder Evidence Review/);
+  assert.match(app, /Observable behavior, not founder vibes/);
+  assert.match(app, /only consented behavioral evidence/);
+  assert.match(app, /Confirm that the Founder Evidence update contains only consented behavioral evidence/);
+  assert.match(app, /sourceDate: dateInTimeZone/);
+  assert.match(founder, /Insight/);
+  assert.match(founder, /Integrity/);
+  assert.match(founder, /Adaptability/);
+  assert.match(founder, /Recruiting ability/);
+  assert.match(founder, /Speed/);
+  assert.match(founder, /Founder-market fit/);
   assert.match(app, /Compare investment judgments with later evidence/);
   assert.match(app, /Open resolution source/);
   assert.match(app, /Open original source/);
@@ -40,6 +52,12 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(api, /reading_record/);
   assert.match(api, /forecast_resolution/);
   assert.match(api, /commit_calibration_review/);
+  assert.match(api, /founder_evidence_review/);
+  assert.match(api, /Founder Evidence Review must cover all six behavior dimensions/);
+  assert.match(api, /Private Founder Evidence requires confirmation/);
+  assert.match(api, /Founder Evidence contains an undeclared field/);
+  assert.match(api, /Founder Evidence updates require a concise behavioral note/);
+  assert.match(api, /founderReview\.parent_id !== parentId/);
   assert.match(api, /resolvedForecasts/);
   assert.match(api, /cannot be resolved negatively until/);
   assert.match(api, /Commit Calibration Reviews through the scoring workflow/);

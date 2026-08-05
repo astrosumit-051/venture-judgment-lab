@@ -75,11 +75,7 @@ const brief = await post({
 });
 assert.equal(brief.readingIds.length, 4);
 
-const snapshot = await post({
-  operation: "commit_record",
-  recordType: "snapshot_judgment",
-  title: "Verification Co — Watch at 58%",
-  payload: {
+const snapshotPayload = {
     company: "Verification Co",
     stage: "Seed",
     sector: "Testing",
@@ -94,6 +90,161 @@ const snapshot = await post({
     disconfirmingSignal: "The interaction has not yet been reloaded.",
     topUnknown: "Whether linked records remain queryable.",
     nextEvidence: "Reload the owner-scoped history.",
+};
+
+const snapshot = await post({
+  operation: "commit_record",
+  recordType: "snapshot_judgment",
+  title: "Verification Co — Watch at 58%",
+  payload: snapshotPayload,
+});
+
+const founderDimensions = ["insight", "speed", "integrity", "recruiting", "adaptability", "founder_market_fit"];
+
+await post({
+  operation: "commit_record",
+  recordType: "founder_evidence_review",
+  parentId: snapshot.id,
+  title: "Invalid private Founder Evidence Review",
+  payload: {
+    linkedSnapshotId: snapshot.id,
+    company: "Verification Co",
+    founderName: "Synthetic Founder",
+    sourceType: "Direct conversation",
+    sourceUrlOrContext: "Private product conversation.",
+    sourceDate: "2026-08-05",
+    sourceLimitations: "One direct interaction with no independent references.",
+    privacyBoundary: "Behavioral observations only.",
+    dimensions: founderDimensions.map((dimension) => ({
+      dimension,
+      direction: "gap",
+      observation: `No decisive ${dimension} behavior was observable.`,
+      inference: `${dimension} remains unknown.`,
+    })),
+    charismaCheck: "No charisma inference used.",
+    counterEvidence: "No independent evidence exists.",
+    provisionalJudgment: "The evidence remains incomplete.",
+    confidence: 25,
+    nextQuestion: "What behavior would resolve the largest gap?",
+    behavioralPrediction: "The next interaction will produce one observable decision process.",
+    timezone: "America/Chicago",
+  },
+}, 400);
+
+await post({
+  operation: "commit_record",
+  recordType: "founder_evidence_review",
+  parentId: snapshot.id,
+  title: "Invalid Founder Evidence Review",
+  payload: {
+    linkedSnapshotId: snapshot.id,
+    company: "Verification Co",
+    founderName: "Synthetic Founder",
+    sourceType: "Public interview",
+    sourceUrlOrContext: "https://example.com/founder-interview",
+    sourceDate: "2026-08-05",
+    sourceLimitations: "Synthetic verification source.",
+    privacyBoundary: "Public source only.",
+    dimensions: [],
+    charismaCheck: "No charisma inference used.",
+    counterEvidence: "No independent reference evidence exists.",
+    provisionalJudgment: "The evidence remains incomplete.",
+    confidence: 30,
+    nextQuestion: "What evidence would change the current product decision?",
+    behavioralPrediction: "The founder will name a falsifiable learning milestone.",
+    timezone: "America/Chicago",
+  },
+}, 400);
+
+const validFounderPayload = {
+    linkedSnapshotId: snapshot.id,
+    company: "Verification Co",
+    founderName: "Synthetic Founder",
+    sourceType: "Public interview",
+    sourceUrlOrContext: "https://example.com/founder-interview",
+    sourceDate: "2026-08-05",
+    sourceLimitations: "One edited public interview with no independent references.",
+    privacyBoundary: "Public behavior evidence only; no private transcript.",
+    dimensions: founderDimensions.map((dimension, index) => ({
+      dimension,
+      direction: index === 2 ? "weakens" : index === 3 ? "gap" : "supports",
+      observation: index === 3 ? "No recruiting behavior was observable in the source." : `Observable ${dimension} behavior ${index + 1}.`,
+      inference: index === 3 ? "Recruiting ability remains unknown." : `The behavior provides limited evidence about ${dimension} and does not prove overall founder quality.`,
+    })),
+    charismaCheck: "Presentation polish was excluded; only concrete choices and responses were retained.",
+    counterEvidence: "The founder avoided one question about a failed experiment.",
+    provisionalJudgment: "The source supports insight and adaptability but leaves recruiting ability unresolved.",
+    confidence: 57,
+    nextQuestion: "Who changed your mind most recently, and what did you do differently afterward?",
+    behavioralPrediction: "The founder will name a specific changed decision and the evidence that caused it.",
+    timezone: "America/Chicago",
+};
+
+await post({
+  operation: "commit_record",
+  recordType: "founder_evidence_review",
+  parentId: snapshot.id,
+  title: "Mismatched company Founder Evidence Review",
+  payload: { ...validFounderPayload, company: "Different Company" },
+}, 400);
+
+await post({
+  operation: "commit_record",
+  recordType: "founder_evidence_review",
+  parentId: snapshot.id,
+  title: "Founder Evidence Review with undeclared material",
+  payload: { ...validFounderPayload, rawTranscript: "This undeclared field must never be preserved." },
+}, 400);
+
+const founderReview = await post({
+  operation: "commit_record",
+  recordType: "founder_evidence_review",
+  parentId: snapshot.id,
+  title: "Verification Co — Founder Evidence Review",
+  payload: validFounderPayload,
+});
+
+await post({
+  operation: "append_event",
+  recordId: founderReview.id,
+  eventType: "reflection",
+  eventData: {
+    text: "A later observation belongs in the append-only record.",
+    originalPreserved: true,
+    privateEvidenceConfirmed: true,
+    rawTranscript: "This undeclared field must be rejected.",
+  },
+}, 400);
+
+await post({
+  operation: "append_event",
+  recordId: founderReview.id,
+  eventType: "reflection",
+  eventData: {
+    text: "A later observation without privacy confirmation must be rejected.",
+    originalPreserved: true,
+  },
+}, 400);
+
+await post({
+  operation: "append_event",
+  recordId: founderReview.id,
+  eventType: "reflection",
+  eventData: {
+    text: "A later public observation weakened the original adaptability inference.",
+    originalPreserved: true,
+    privateEvidenceConfirmed: true,
+  },
+});
+
+const otherSnapshot = await post({
+  operation: "commit_record",
+  recordType: "snapshot_judgment",
+  title: "Other Verification Co — Watch at 58%",
+  payload: {
+    ...snapshotPayload,
+    company: "Other Verification Co",
+    thesis: "This second Snapshot verifies that Founder Evidence cannot cross identity boundaries.",
   },
 });
 
@@ -207,12 +358,7 @@ await post({
   },
 }, 400);
 
-const underwrite = await post({
-  operation: "commit_record",
-  recordType: "weekly_underwrite",
-  parentId: snapshot.id,
-  title: "Verification Co — Underwrite",
-  payload: {
+const underwritePayload = {
     snapshotId: snapshot.id,
     selectionReason: "Tests a load-bearing persistence uncertainty.",
     questions: ["Does the brief persist?", "Does the forecast remain unchanged?", "Do events append?"],
@@ -221,15 +367,31 @@ const underwrite = await post({
       { loadBearingQuestion: "Does the forecast remain unchanged?", observation: "No resolution has been read yet.", sourceUrl: "https://example.com/two", direction: "challenges", reliabilityLimits: "Pre-resolution evidence.", inference: "The final read must control." },
       { loadBearingQuestion: "Do events append?", observation: "The event endpoint accepts a linked record.", sourceUrl: "https://example.com/three", direction: "complicates", reliabilityLimits: "One event type tested.", inference: "Append behavior can be checked directly." },
     ],
-    founderEvidence: "Not applicable to the synthetic verification company; explicit gap recorded.",
-    founderEvidenceSourceOrGap: "No real founder exists in this verification case.",
+    founderEvidence: "The linked review supports insight and adaptability while preserving a recruiting-evidence gap.",
+    founderEvidenceSourceOrGap: "Linked public interview review; no independent recruiting reference yet.",
+    founderReviewId: founderReview.id,
     countercase: "The API may accept writes but fail to preserve them on the owner-scoped read.",
     causalInvestmentCase: "A functioning append-only record makes judgment improvement inspectable.",
     disposition: "Watch",
     confidence: 67,
     decisionDelta: "Confidence increased after atomic brief insertion; the final read remains decisive.",
     nextEvidence: "Read the complete owner-scoped record and compare the locked probability.",
-  },
+};
+
+await post({
+  operation: "commit_record",
+  recordType: "weekly_underwrite",
+  parentId: otherSnapshot.id,
+  title: "Invalid cross-Snapshot Underwrite",
+  payload: { ...underwritePayload, snapshotId: otherSnapshot.id },
+}, 400);
+
+const underwrite = await post({
+  operation: "commit_record",
+  recordType: "weekly_underwrite",
+  parentId: snapshot.id,
+  title: "Verification Co — Underwrite",
+  payload: underwritePayload,
 });
 
 await post({
@@ -312,12 +474,12 @@ await post({
 });
 
 const final = await fetch(`${baseUrl}/api/lab`, { headers }).then((response) => response.json());
-assert.equal(final.records.length, 13);
-assert.equal(final.events.length, 2);
+assert.equal(final.records.length, 15);
+assert.equal(final.events.length, 3);
 const lockedForecast = final.records.find((record) => record.id === forecast.id);
 assert.equal(lockedForecast.payload.probability, 61);
 assert.equal(final.events.filter((event) => event.recordId === forecast.id).length, 2);
 const calibration = final.records.find((record) => record.recordType === "calibration_review");
 assert.equal(calibration.payload.brierScore, 0.1521);
 
-console.log("API smoke passed: 13 immutable records, 2 append-only events, calibration scoring, horizon-boundary checks, and owner isolation intact.");
+console.log("API smoke passed: 15 immutable records, 3 append-only events, Founder Evidence trust boundaries, calibration scoring, horizon-boundary checks, and owner isolation intact.");

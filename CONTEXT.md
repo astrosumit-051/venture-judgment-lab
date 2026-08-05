@@ -116,6 +116,10 @@ _Avoid_: Token risks section, weak devil's advocate
 Observable behavior supporting or weakening a view of a founder's insight, integrity, adaptability, recruiting ability, speed, and founder-market fit; charisma and credentials alone are not evidence of founder quality.
 _Avoid_: Founder vibes, pedigree score
 
+**Founder Evidence Review**:
+One immutable, dated interpretation of one public interview, direct conversation, reference conversation, or customer or employee observation. It separates behavior from inference across all six Founder Evidence dimensions, preserves gaps, source limitations, privacy boundaries, halo-effect checks, counterevidence, a next question, and a behavioral prediction without producing an overall founder score.
+_Avoid_: Founder rating, personality assessment, transcript archive
+
 **Sector Discovery Cycle**:
 A comparative rotation through technology domains that measures sustained curiosity, access, analytical advantage, and emerging insight before the learner earns a focused thesis.
 _Avoid_: Premature sector thesis, trend chasing

@@ -3,8 +3,15 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { calculateBrierScore, dateInTimeZone, type ForecastOutcome } from "./calibration";
 import { dailyBrief } from "./dailyBrief";
+import {
+  emptyFounderDimensions,
+  FOUNDER_DIMENSIONS,
+  FOUNDER_SOURCE_TYPES,
+  type FounderDimensionObservation,
+  type FounderSourceType,
+} from "./founderEvidence";
 
-type View = "today" | "brief" | "snapshot" | "forecast" | "map" | "underwrite" | "calibrate" | "plan" | "history";
+type View = "today" | "brief" | "snapshot" | "forecast" | "map" | "founder" | "underwrite" | "calibrate" | "plan" | "history";
 
 type LabRecord = {
   id: string;
@@ -48,6 +55,7 @@ const navItems: Array<{ id: View; key: string; label: string; hint: string }> = 
   { id: "snapshot", key: "S", label: "Snapshot", hint: "Lock the first pass" },
   { id: "forecast", key: "F", label: "Forecast", hint: "Put odds on it" },
   { id: "map", key: "M", label: "2nd Order", hint: "Trace consequences" },
+  { id: "founder", key: "E", label: "Founder", hint: "Observe behavior" },
   { id: "underwrite", key: "U", label: "Underwrite", hint: "Test the crux" },
   { id: "calibrate", key: "C", label: "Calibrate", hint: "Score prior judgment" },
   { id: "plan", key: "P", label: "Practice", hint: "Choose the week mode" },
@@ -151,6 +159,7 @@ const emptyUnderwrite = {
   question1: "",
   question2: "",
   question3: "",
+  founderReviewId: "",
   founderEvidence: "",
   founderEvidenceSourceOrGap: "",
   countercase: "",
@@ -160,6 +169,25 @@ const emptyUnderwrite = {
   decisionDelta: "",
   nextEvidence: "",
 };
+
+const emptyFounderReview = () => ({
+  linkedSnapshotId: "",
+  company: "",
+  founderName: "",
+  sourceType: "Public interview" as FounderSourceType,
+  sourceUrlOrContext: "",
+  sourceDate: dateInTimeZone(new Date(), dailyBrief.timezone),
+  sourceLimitations: "",
+  privacyBoundary: "",
+  privateEvidenceConfirmed: false,
+  dimensions: emptyFounderDimensions(),
+  charismaCheck: "",
+  counterEvidence: "",
+  provisionalJudgment: "",
+  confidence: 50,
+  nextQuestion: "",
+  behavioralPrediction: "",
+});
 
 const emptyEvidenceRow = (): EvidenceRow => ({
   observation: "",
@@ -196,6 +224,7 @@ function recordLabel(type: string): string {
     snapshot_judgment: "Snapshot Judgment",
     forecast: "Forecast",
     second_order_map: "Second-Order Map",
+    founder_evidence_review: "Founder Evidence Review",
     weekly_underwrite: "Weekly Underwrite",
     weekly_plan: "Practice Plan",
     calibration_review: "Calibration Review",
@@ -221,6 +250,7 @@ function recordSummary(record: LabRecord): string {
   if (record.recordType === "snapshot_judgment") return textValue(record.payload, "thesis");
   if (record.recordType === "forecast") return `${numberValue(record.payload, "probability")}% — ${textValue(record.payload, "claim")}`;
   if (record.recordType === "second_order_map") return textValue(record.payload, "firstOrder");
+  if (record.recordType === "founder_evidence_review") return textValue(record.payload, "provisionalJudgment");
   if (record.recordType === "weekly_underwrite") return textValue(record.payload, "decisionDelta");
   if (record.recordType === "weekly_plan") return textValue(record.payload, "rationale");
   if (record.recordType === "calibration_review") return textValue(record.payload, "findings");
@@ -256,6 +286,26 @@ function keyEvidence(record: LabRecord): Array<[string, string]> {
     ["Analytical mistakes", textValue(p, "analyticalMistakes")],
     ["Updated decision rule", textValue(p, "updatedDecisionRule")],
   ];
+  if (record.recordType === "founder_evidence_review") return [
+    ["Evidence source", `${textValue(p, "sourceType")} · ${textValue(p, "sourceDate")}`],
+    ["Source context", textValue(p, "sourceUrlOrContext")],
+    ["Source limitations", textValue(p, "sourceLimitations")],
+    ["Privacy boundary", textValue(p, "privacyBoundary")],
+    ["Charisma and pedigree check", textValue(p, "charismaCheck")],
+    ["Provisional judgment", `${numberValue(p, "confidence")}% confidence · ${textValue(p, "provisionalJudgment")}`],
+    ["Counterevidence", textValue(p, "counterEvidence")],
+    ["Next question", textValue(p, "nextQuestion")],
+    ["Behavioral prediction", textValue(p, "behavioralPrediction")],
+    ...(Array.isArray(p.dimensions) ? p.dimensions.flatMap((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+      const dimension = item as Record<string, unknown>;
+      const definition = FOUNDER_DIMENSIONS.find((candidate) => candidate.key === dimension.dimension);
+      const direction = typeof dimension.direction === "string" ? dimension.direction : "gap";
+      const observation = typeof dimension.observation === "string" ? dimension.observation : "";
+      const inference = typeof dimension.inference === "string" ? dimension.inference : "";
+      return definition ? [[definition.label, `${direction}: ${observation} Inference: ${inference}`] as [string, string]] : [];
+    }) : []),
+  ];
   return [];
 }
 
@@ -276,6 +326,7 @@ export function LabApp({ displayName }: { displayName: string }) {
   const [snapshot, setSnapshot] = useState(emptySnapshot);
   const [forecast, setForecast] = useState(emptyForecast);
   const [secondOrder, setSecondOrder] = useState(emptyMap);
+  const [founderReview, setFounderReview] = useState(emptyFounderReview);
   const [underwrite, setUnderwrite] = useState(emptyUnderwrite);
   const [calibration, setCalibration] = useState(emptyCalibration);
   const [resolutionDrafts, setResolutionDrafts] = useState<Record<string, ResolutionDraft>>({});
@@ -292,11 +343,20 @@ export function LabApp({ displayName }: { displayName: string }) {
   const [updateRecord, setUpdateRecord] = useState("");
   const [updateType, setUpdateType] = useState("reflection");
   const [updateText, setUpdateText] = useState("");
+  const [updatePrivateEvidenceConfirmed, setUpdatePrivateEvidenceConfirmed] = useState(false);
   const [historyFilter, setHistoryFilter] = useState("all");
 
   const snapshots = useMemo(
     () => data.records.filter((record) => record.recordType === "snapshot_judgment"),
     [data.records],
+  );
+  const founderReviews = useMemo(
+    () => data.records.filter((record) => record.recordType === "founder_evidence_review"),
+    [data.records],
+  );
+  const eligibleFounderReviews = useMemo(
+    () => founderReviews.filter((record) => record.parentId === underwrite.snapshotId),
+    [founderReviews, underwrite.snapshotId],
   );
   const forecasts = useMemo(
     () => data.records.filter((record) => record.recordType === "forecast"),
@@ -453,6 +513,32 @@ export function LabApp({ displayName }: { displayName: string }) {
     }
   }
 
+  function updateFounderDimension(index: number, patch: Partial<FounderDimensionObservation>) {
+    setFounderReview((current) => ({
+      ...current,
+      dimensions: current.dimensions.map((dimension, dimensionIndex) => (
+        dimensionIndex === index ? { ...dimension, ...patch } : dimension
+      )),
+    }));
+  }
+
+  async function commitFounderReview(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const parent = snapshots.find((record) => record.id === founderReview.linkedSnapshotId);
+    const saved = await post({
+      operation: "commit_record",
+      recordType: "founder_evidence_review",
+      parentId: parent?.id ?? null,
+      title: `${founderReview.company} — Founder Evidence Review`,
+      payload: { ...founderReview, timezone: dailyBrief.timezone },
+    });
+    if (saved) {
+      setFounderReview(emptyFounderReview());
+      setNotice("Founder Evidence Review preserved. Later behavior belongs in an appended update or a new review.");
+      setView("underwrite");
+    }
+  }
+
   function updateResolution(forecastId: string, patch: Partial<ResolutionDraft>) {
     setResolutionDrafts((current) => ({
       ...current,
@@ -553,19 +639,30 @@ export function LabApp({ displayName }: { displayName: string }) {
       setNotice("Choose an original record and write the dated update.");
       return;
     }
+    const selectedRecord = data.records.find((record) => record.id === updateRecord);
+    if (selectedRecord?.recordType === "founder_evidence_review" && !updatePrivateEvidenceConfirmed) {
+      setNotice("Confirm that the Founder Evidence update contains only consented behavioral evidence.");
+      return;
+    }
     const saved = await post({
       operation: "append_event",
       recordId: updateRecord,
       eventType: updateType,
-      eventData: { text: updateText.trim(), originalPreserved: true },
+      eventData: {
+        text: updateText.trim(),
+        originalPreserved: true,
+        ...(selectedRecord?.recordType === "founder_evidence_review" ? { privateEvidenceConfirmed: true } : {}),
+      },
     });
     if (saved) {
       setUpdateText("");
+      setUpdatePrivateEvidenceConfirmed(false);
       setNotice("Update appended. The original submission and probability remain unchanged.");
     }
   }
 
   const latestPlan = topLevelRecords.find((record) => record.recordType === "weekly_plan");
+  const selectedUpdateRecord = data.records.find((record) => record.id === updateRecord);
   const activeMode = (latestPlan ? textValue(latestPlan.payload, "mode") : "Normal Week") as PracticeMode;
   const modeDefinition = practiceModes[activeMode] ?? practiceModes["Normal Week"];
   const progress = {
@@ -573,6 +670,7 @@ export function LabApp({ displayName }: { displayName: string }) {
     snapshots: snapshots.length,
     forecasts: topLevelRecords.filter((record) => record.recordType === "forecast").length,
     underwrites: topLevelRecords.filter((record) => record.recordType === "weekly_underwrite").length,
+    founderReviews: topLevelRecords.filter((record) => record.recordType === "founder_evidence_review").length,
     calibrations: topLevelRecords.filter((record) => record.recordType === "calibration_review").length,
   };
   const latestSnapshot = snapshots[0];
@@ -652,6 +750,7 @@ export function LabApp({ displayName }: { displayName: string }) {
               <div><strong>{progress.snapshots}</strong><span>Snapshots</span></div>
               <div><strong>{progress.forecasts}</strong><span>Forecasts</span></div>
               <div><strong>{progress.underwrites}</strong><span>Underwrites</span></div>
+              <div><strong>{progress.founderReviews}</strong><span>Founder reviews</span></div>
               <div><strong>{progress.calibrations}</strong><span>Calibrations</span></div>
               <p>Repetitions are evidence, not points. Quality appears in later updates and calibration.</p>
             </div>
@@ -727,15 +826,28 @@ export function LabApp({ displayName }: { displayName: string }) {
           </section>
         )}
 
+        {view === "founder" && (
+          <section className="view form-view">
+            <div className="intro-row"><div><span className="eyebrow coral">Founder Evidence Review</span><h2>Observable behavior, not founder vibes.</h2></div><p>Review one public source or real interaction. Separate what happened from what you infer, preserve missing evidence, and never turn charisma or pedigree into a founder score.</p></div>
+            <form className="judgment-form" onSubmit={commitFounderReview}>
+              <fieldset><legend><span>01</span> Identify the evidence encounter</legend><label>Link a Snapshot <small>Optional, but required when this review will support that company’s Underwrite.</small><select value={founderReview.linkedSnapshotId} onChange={(e) => { const linked = snapshots.find((record) => record.id === e.target.value); setFounderReview({ ...founderReview, linkedSnapshotId: e.target.value, company: linked ? textValue(linked.payload, "company") : founderReview.company }); }}><option value="">No linked Snapshot</option>{snapshots.map((record) => <option key={record.id} value={record.id}>{record.title}</option>)}</select></label><div className="field-grid two"><label>Company {founderReview.linkedSnapshotId && <small>Locked to the selected Snapshot.</small>}<input required readOnly={Boolean(founderReview.linkedSnapshotId)} value={founderReview.company} onChange={(e) => setFounderReview({ ...founderReview, company: e.target.value })} /></label><label>Founder<input required value={founderReview.founderName} onChange={(e) => setFounderReview({ ...founderReview, founderName: e.target.value })} /></label><label>Evidence source type<select value={founderReview.sourceType} onChange={(e) => setFounderReview({ ...founderReview, sourceType: e.target.value as FounderSourceType, privateEvidenceConfirmed: false })}>{FOUNDER_SOURCE_TYPES.map((sourceType) => <option key={sourceType}>{sourceType}</option>)}</select></label><label>Observed on<input required type="date" value={founderReview.sourceDate} onChange={(e) => setFounderReview({ ...founderReview, sourceDate: e.target.value })} /></label></div><label>{founderReview.sourceType === "Public interview" ? "Original source URL" : "Source context—no transcript required"}<input required type={founderReview.sourceType === "Public interview" ? "url" : "text"} value={founderReview.sourceUrlOrContext} onChange={(e) => setFounderReview({ ...founderReview, sourceUrlOrContext: e.target.value })} placeholder={founderReview.sourceType === "Public interview" ? "https://" : "Private conversation, event, or reference context"} /></label><label>Source limitations<textarea required rows={3} value={founderReview.sourceLimitations} onChange={(e) => setFounderReview({ ...founderReview, sourceLimitations: e.target.value })} placeholder="Editing, incentives, selection effects, missing context, or relationship limits." /></label><label>Privacy and consent boundary<textarea required rows={2} value={founderReview.privacyBoundary} onChange={(e) => setFounderReview({ ...founderReview, privacyBoundary: e.target.value })} placeholder="Record behavioral evidence only. Name what must remain private or was not consented for reuse." /></label>{founderReview.sourceType !== "Public interview" && <label className="privacy-confirmation"><input required type="checkbox" checked={founderReview.privateEvidenceConfirmed} onChange={(e) => setFounderReview({ ...founderReview, privateEvidenceConfirmed: e.target.checked })} />I confirm this review contains only consented behavioral evidence and omits raw transcripts and confidential details.</label>}</fieldset>
+              <fieldset><legend><span>02</span> Examine all six behavior dimensions</legend><p className="fieldset-note">A gap is valid. Invented certainty is not. Every row needs the observation and the limited inference it supports.</p><div className="founder-dimension-grid">{FOUNDER_DIMENSIONS.map((definition, index) => { const dimension = founderReview.dimensions[index]; return <article className="founder-dimension" key={definition.key}><div className="dimension-head"><div><span>0{index + 1}</span><h3>{definition.label}</h3></div><select aria-label={`${definition.label} evidence direction`} value={dimension.direction} onChange={(e) => updateFounderDimension(index, { direction: e.target.value as FounderDimensionObservation["direction"] })}><option value="supports">Supports</option><option value="weakens">Weakens</option><option value="gap">Evidence gap</option></select></div><p>{definition.prompt}</p><label>Observed behavior<textarea required rows={3} value={dimension.observation} onChange={(e) => updateFounderDimension(index, { observation: e.target.value })} placeholder={dimension.direction === "gap" ? "State exactly what behavior could not be observed." : "Describe the concrete statement, choice, sequence, or response."} /></label><label>Limited inference<textarea required rows={3} value={dimension.inference} onChange={(e) => updateFounderDimension(index, { inference: e.target.value })} placeholder="What does this support or weaken—and what does it still not prove?" /></label></article>; })}</div></fieldset>
+              <fieldset><legend><span>03</span> Fight halo effects and seek disconfirmation</legend><label>Charisma and pedigree check<textarea required rows={3} value={founderReview.charismaCheck} onChange={(e) => setFounderReview({ ...founderReview, charismaCheck: e.target.value })} placeholder="Which impressions came from polish, confidence, school, employer, funder, or status—and what behavioral evidence remains after removing them?" /></label><label>Strongest counterevidence<textarea required rows={3} value={founderReview.counterEvidence} onChange={(e) => setFounderReview({ ...founderReview, counterEvidence: e.target.value })} placeholder="Name the observation that most weakens your emerging view, or the precise gap preventing confidence." /></label></fieldset>
+              <fieldset><legend><span>04</span> Commit a provisional, testable view</legend><label>Provisional Founder Evidence judgment<textarea required rows={4} value={founderReview.provisionalJudgment} onChange={(e) => setFounderReview({ ...founderReview, provisionalJudgment: e.target.value })} placeholder="Synthesize only the observable evidence. This is not a founder grade or personality verdict." /></label><label>Confidence in this evidence-based view <strong>{founderReview.confidence}%</strong><input className="range" type="range" min="1" max="99" value={founderReview.confidence} onChange={(e) => setFounderReview({ ...founderReview, confidence: Number(e.target.value) })} /></label><label>Next decisive question<textarea required rows={3} value={founderReview.nextQuestion} onChange={(e) => setFounderReview({ ...founderReview, nextQuestion: e.target.value })} placeholder="What would you ask in the next interview, conversation, or reference call?" /></label><label>Behavioral prediction<textarea required rows={3} value={founderReview.behavioralPrediction} onChange={(e) => setFounderReview({ ...founderReview, behavioralPrediction: e.target.value })} placeholder="What observable future behavior would strengthen or weaken this view?" /></label></fieldset>
+              <CommitBar busy={busy} label="Commit Founder Evidence Review" busyLabel="Preserving behavior evidence…" />
+            </form>
+          </section>
+        )}
+
         {view === "underwrite" && (
           <section className="view form-view">
             <div className="intro-row"><div><span className="eyebrow coral">Normal Week · 165 minutes</span><h2>Investigate what can change the view.</h2></div><p>Exactly three questions. Claim-linked evidence for and against. No weighted startup score.</p></div>
             {!snapshots.length ? <EmptyState code="U" title="An Underwrite begins with a locked Snapshot." copy="Commit the independent first pass before opening deeper diligence." action="Create Snapshot" onAction={() => setView("snapshot")} /> : (
               <form className="judgment-form" onSubmit={commitUnderwrite}>
-                <fieldset><legend><span>01</span> Reopen without rewriting</legend><label>Locked Snapshot<select required value={underwrite.snapshotId} onChange={(e) => setUnderwrite({ ...underwrite, snapshotId: e.target.value })}><option value="">Choose a Snapshot…</option>{snapshots.map((record) => <option key={record.id} value={record.id}>{record.title} · {formatTime(record.committedAt)}</option>)}</select></label>{underwrite.snapshotId && (() => { const chosen = snapshots.find((record) => record.id === underwrite.snapshotId); return chosen ? <div className="locked-view"><span>Original thesis</span><p>{textValue(chosen.payload, "thesis")}</p><small>Locked {formatTime(chosen.committedAt)} · {textValue(chosen.payload, "crux")}</small></div> : null; })()}<label>Why this company now?<textarea required rows={2} value={underwrite.selectionReason} onChange={(e) => setUnderwrite({ ...underwrite, selectionReason: e.target.value })} placeholder="Name the load-bearing uncertainty, learner weakness, sector relevance, or deadline." /></label><label>Pre-diligence note <small>Optional and appended beside the Snapshot.</small><textarea rows={2} value={underwrite.preDiligenceNote} onChange={(e) => setUnderwrite({ ...underwrite, preDiligenceNote: e.target.value })} /></label></fieldset>
+                <fieldset><legend><span>01</span> Reopen without rewriting</legend><label>Locked Snapshot<select required value={underwrite.snapshotId} onChange={(e) => setUnderwrite({ ...underwrite, snapshotId: e.target.value, founderReviewId: "" })}><option value="">Choose a Snapshot…</option>{snapshots.map((record) => <option key={record.id} value={record.id}>{record.title} · {formatTime(record.committedAt)}</option>)}</select></label>{underwrite.snapshotId && (() => { const chosen = snapshots.find((record) => record.id === underwrite.snapshotId); return chosen ? <div className="locked-view"><span>Original thesis</span><p>{textValue(chosen.payload, "thesis")}</p><small>Locked {formatTime(chosen.committedAt)} · {textValue(chosen.payload, "crux")}</small></div> : null; })()}<label>Why this company now?<textarea required rows={2} value={underwrite.selectionReason} onChange={(e) => setUnderwrite({ ...underwrite, selectionReason: e.target.value })} placeholder="Name the load-bearing uncertainty, learner weakness, sector relevance, or deadline." /></label><label>Pre-diligence note <small>Optional and appended beside the Snapshot.</small><textarea rows={2} value={underwrite.preDiligenceNote} onChange={(e) => setUnderwrite({ ...underwrite, preDiligenceNote: e.target.value })} /></label></fieldset>
                 <fieldset><legend><span>02</span> Frame exactly three Load-Bearing Questions</legend>{(["question1", "question2", "question3"] as const).map((key, index) => <label key={key}>Question {index + 1}<input required value={underwrite[key]} onChange={(e) => setUnderwrite({ ...underwrite, [key]: e.target.value })} placeholder="What answer could materially change the disposition?" /></label>)}</fieldset>
                 <fieldset><legend><span>03</span> Build the claim-linked Evidence Ledger</legend>{ledger.map((row, index) => <div className="ledger-row" key={index}><div className="ledger-head"><strong>Evidence for question {index + 1}</strong><select aria-label={`Direction for evidence ${index + 1}`} value={row.direction} onChange={(e) => updateLedger(index, { direction: e.target.value as EvidenceRow["direction"] })}><option value="supports">Supports</option><option value="challenges">Challenges</option><option value="complicates">Complicates</option></select></div><label>Observation<textarea required rows={2} value={row.observation} onChange={(e) => updateLedger(index, { observation: e.target.value })} placeholder="What the source actually shows." /></label><label>Source URL<input required type="url" value={row.sourceUrl} onChange={(e) => updateLedger(index, { sourceUrl: e.target.value })} placeholder="https://" /></label><div className="field-grid two"><label>Reliability limits<textarea required rows={2} value={row.reliabilityLimits} onChange={(e) => updateLedger(index, { reliabilityLimits: e.target.value })} /></label><label>Your inference<textarea required rows={2} value={row.inference} onChange={(e) => updateLedger(index, { inference: e.target.value })} /></label></div></div>)}</fieldset>
-                <fieldset><legend><span>04</span> Founder Evidence and Countercase</legend><label>Observable Founder Evidence—or the explicit gap<textarea required rows={3} value={underwrite.founderEvidence} onChange={(e) => setUnderwrite({ ...underwrite, founderEvidence: e.target.value })} placeholder="Behavior only. No charisma or pedigree inference." /></label><label>Founder source or exact evidence gap<textarea required rows={2} value={underwrite.founderEvidenceSourceOrGap} onChange={(e) => setUnderwrite({ ...underwrite, founderEvidenceSourceOrGap: e.target.value })} /></label><label>Strongest evidence-based Countercase<textarea required rows={4} value={underwrite.countercase} onChange={(e) => setUnderwrite({ ...underwrite, countercase: e.target.value })} placeholder="The causal path by which this fails to create venture-scale value." /></label></fieldset>
+                <fieldset><legend><span>04</span> Founder Evidence and Countercase</legend><label>Linked Founder Evidence Review <small>Optional only when no qualified review exists; the explicit gap remains required below.</small><select value={underwrite.founderReviewId} onChange={(e) => setUnderwrite({ ...underwrite, founderReviewId: e.target.value })}><option value="">No linked review—record the gap</option>{eligibleFounderReviews.map((record) => <option key={record.id} value={record.id}>{record.title} · {formatTime(record.committedAt)}</option>)}</select></label>{underwrite.founderReviewId && (() => { const review = eligibleFounderReviews.find((record) => record.id === underwrite.founderReviewId); return review ? <div className="locked-view"><span>Committed Founder Evidence</span><p>{textValue(review.payload, "provisionalJudgment")}</p><small>{numberValue(review.payload, "confidence")}% confidence · {textValue(review.payload, "sourceType")}</small></div> : null; })()}<label>Observable Founder Evidence—or the explicit gap<textarea required rows={3} value={underwrite.founderEvidence} onChange={(e) => setUnderwrite({ ...underwrite, founderEvidence: e.target.value })} placeholder="Behavior only. No charisma or pedigree inference." /></label><label>Founder source or exact evidence gap<textarea required rows={2} value={underwrite.founderEvidenceSourceOrGap} onChange={(e) => setUnderwrite({ ...underwrite, founderEvidenceSourceOrGap: e.target.value })} /></label><label>Strongest evidence-based Countercase<textarea required rows={4} value={underwrite.countercase} onChange={(e) => setUnderwrite({ ...underwrite, countercase: e.target.value })} placeholder="The causal path by which this fails to create venture-scale value." /></label></fieldset>
                 <fieldset><legend><span>05</span> Commit the deeper judgment</legend><label>Causal investment case<textarea required rows={4} value={underwrite.causalInvestmentCase} onChange={(e) => setUnderwrite({ ...underwrite, causalInvestmentCase: e.target.value })} /></label><div className="field-grid two"><label>Final Practice Disposition<select value={underwrite.disposition} onChange={(e) => setUnderwrite({ ...underwrite, disposition: e.target.value })}><option>Pursue</option><option>Watch</option><option>Pass</option></select></label><label>Final confidence <strong>{underwrite.confidence}%</strong><input className="range" type="range" min="1" max="99" value={underwrite.confidence} onChange={(e) => setUnderwrite({ ...underwrite, confidence: Number(e.target.value) })} /></label></div><label>Decision Delta<textarea required rows={3} value={underwrite.decisionDelta} onChange={(e) => setUnderwrite({ ...underwrite, decisionDelta: e.target.value })} placeholder="What stayed, changed, or reversed—and which evidence caused it?" /></label><label>Next decisive evidence<textarea required rows={3} value={underwrite.nextEvidence} onChange={(e) => setUnderwrite({ ...underwrite, nextEvidence: e.target.value })} /></label></fieldset>
                 <CommitBar busy={busy} label="Commit Underwrite" busyLabel="Locking deeper view…" />
               </form>
@@ -775,7 +887,7 @@ export function LabApp({ displayName }: { displayName: string }) {
         {view === "history" && (
           <section className="view">
             <div className="intro-row"><div><span className="eyebrow coral">Private Learning Record</span><h2>Originals stay. Updates accumulate.</h2></div><p>Resolve Forecasts, record corrections, and add hindsight here. Nothing below edits the evidence you committed earlier.</p></div>
-            <div className="history-tools"><label>Show<select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value)}><option value="all">All records</option><option value="daily_brief">Daily Briefs</option><option value="snapshot_judgment">Snapshots</option><option value="forecast">Forecasts</option><option value="second_order_map">Second-Order Maps</option><option value="weekly_underwrite">Underwrites</option><option value="calibration_review">Calibration Reviews</option><option value="weekly_plan">Practice plans</option></select></label><span>{filteredRecords.length} immutable submission{filteredRecords.length === 1 ? "" : "s"}</span></div>
+            <div className="history-tools"><label>Show<select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value)}><option value="all">All records</option><option value="daily_brief">Daily Briefs</option><option value="snapshot_judgment">Snapshots</option><option value="forecast">Forecasts</option><option value="second_order_map">Second-Order Maps</option><option value="founder_evidence_review">Founder Evidence Reviews</option><option value="weekly_underwrite">Underwrites</option><option value="calibration_review">Calibration Reviews</option><option value="weekly_plan">Practice plans</option></select></label><span>{filteredRecords.length} immutable submission{filteredRecords.length === 1 ? "" : "s"}</span></div>
             <div className="history-layout">
               <div className="timeline">
                 {loading && <div className="empty-history"><p>Opening your private record…</p></div>}
@@ -783,10 +895,11 @@ export function LabApp({ displayName }: { displayName: string }) {
                 {filteredRecords.map((record) => {
                   const childReadings = data.records.filter((item) => item.parentId === record.id && item.recordType === "reading_record");
                   const events = data.events.filter((event) => event.recordId === record.id || childReadings.some((reading) => reading.id === event.recordId));
-                  return <article className="timeline-record" key={record.id}><span className="timeline-dot" /><div className="record-head"><span>{recordLabel(record.recordType)}</span><time>{formatTime(record.committedAt)}</time></div><h3>{record.title}</h3><p>{recordSummary(record)}</p>{childReadings.length > 0 && <div className="reading-archive">{childReadings.map((reading) => <a key={reading.id} href={textValue(reading.payload, "canonicalUrl")} target="_blank" rel="noreferrer"><span>{textValue(reading.payload, "lane")}</span><strong>{reading.title}</strong><small>{textValue(reading.payload, "learnerResponse")}</small></a>)}</div>}{keyEvidence(record).length > 0 && <details className="evidence-details"><summary>Inspect committed evidence</summary>{keyEvidence(record).map(([label, value]) => <div key={label}><strong>{label}</strong><p>{value}</p></div>)}</details>}{events.map((event) => { const resolutionSource = textValue(event.eventData, "resolutionSource"); const reviewId = textValue(event.eventData, "calibrationReviewId"); const linkedReview = reviewId ? data.records.find((item) => item.id === reviewId) : undefined; return <div className="event" key={event.id}><span>{eventLabel(event.eventType)}</span><time>{formatTime(event.occurredAt)}</time><p>{textValue(event.eventData, "text")}</p>{(resolutionSource || linkedReview) && <div className="event-links">{resolutionSource && <a href={resolutionSource} target="_blank" rel="noreferrer">Open resolution source ↗</a>}{linkedReview && <span>Recorded in {linkedReview.title}</span>}</div>}</div>; })}</article>;
+                  const founderSource = record.recordType === "founder_evidence_review" ? textValue(record.payload, "sourceUrlOrContext") : "";
+                  return <article className="timeline-record" key={record.id}><span className="timeline-dot" /><div className="record-head"><span>{recordLabel(record.recordType)}</span><time>{formatTime(record.committedAt)}</time></div><h3>{record.title}</h3><p>{recordSummary(record)}</p>{founderSource.startsWith("http") && <a className="history-source-link" href={founderSource} target="_blank" rel="noreferrer">Open Founder Evidence source ↗</a>}{childReadings.length > 0 && <div className="reading-archive">{childReadings.map((reading) => <a key={reading.id} href={textValue(reading.payload, "canonicalUrl")} target="_blank" rel="noreferrer"><span>{textValue(reading.payload, "lane")}</span><strong>{reading.title}</strong><small>{textValue(reading.payload, "learnerResponse")}</small></a>)}</div>}{keyEvidence(record).length > 0 && <details className="evidence-details"><summary>Inspect committed evidence</summary>{keyEvidence(record).map(([label, value]) => <div key={label}><strong>{label}</strong><p>{value}</p></div>)}</details>}{events.map((event) => { const resolutionSource = textValue(event.eventData, "resolutionSource"); const reviewId = textValue(event.eventData, "calibrationReviewId"); const linkedReview = reviewId ? data.records.find((item) => item.id === reviewId) : undefined; return <div className="event" key={event.id}><span>{eventLabel(event.eventType)}</span><time>{formatTime(event.occurredAt)}</time><p>{textValue(event.eventData, "text")}</p>{(resolutionSource || linkedReview) && <div className="event-links">{resolutionSource && <a href={resolutionSource} target="_blank" rel="noreferrer">Open resolution source ↗</a>}{linkedReview && <span>Recorded in {linkedReview.title}</span>}</div>}</div>; })}</article>;
                 })}
               </div>
-              <aside className="append-card"><span className="eyebrow coral">Append, never overwrite</span><h3>Add later evidence</h3><p>Use this for reflection, correction, source status, coaching, or later usefulness. Resolve Forecasts only through a Calibration Review so outcome evidence and scoring remain complete.</p><form onSubmit={appendUpdate}><label>Original record<select required value={updateRecord} onChange={(e) => setUpdateRecord(e.target.value)}><option value="">Choose a record…</option>{data.records.map((record) => <option key={record.id} value={record.id}>{recordLabel(record.recordType)} · {record.title}</option>)}</select></label><label>Update type<select value={updateType} onChange={(e) => setUpdateType(e.target.value)}><option value="reflection">Reflection</option><option value="coach_feedback">Coach feedback</option><option value="later_usefulness">Later usefulness</option><option value="source_status">Source status</option><option value="metadata_correction">Metadata correction</option><option value="missed_practice">Missed practice</option></select></label><label>Dated update<textarea required rows={5} value={updateText} onChange={(e) => setUpdateText(e.target.value)} placeholder="State the new evidence, source, outcome, or correction. Do not restate history as if you knew it earlier." /></label><button className="primary" disabled={busy}>{busy ? "Appending…" : "Append update"}</button></form></aside>
+              <aside className="append-card"><span className="eyebrow coral">Append, never overwrite</span><h3>Add later evidence</h3><p>Use this for reflection, correction, source status, coaching, or later usefulness. Resolve Forecasts only through a Calibration Review so outcome evidence and scoring remain complete.</p><form onSubmit={appendUpdate}><label>Original record<select required value={updateRecord} onChange={(e) => { setUpdateRecord(e.target.value); setUpdatePrivateEvidenceConfirmed(false); }}><option value="">Choose a record…</option>{data.records.map((record) => <option key={record.id} value={record.id}>{recordLabel(record.recordType)} · {record.title}</option>)}</select></label><label>Update type<select value={updateType} onChange={(e) => setUpdateType(e.target.value)}><option value="reflection">Reflection</option><option value="coach_feedback">Coach feedback</option><option value="later_usefulness">Later usefulness</option><option value="source_status">Source status</option><option value="metadata_correction">Metadata correction</option><option value="missed_practice">Missed practice</option></select></label><label>Dated update<textarea required rows={5} value={updateText} onChange={(e) => setUpdateText(e.target.value)} placeholder="State the new evidence, source, outcome, or correction. Do not restate history as if you knew it earlier." /></label>{selectedUpdateRecord?.recordType === "founder_evidence_review" && <label className="privacy-confirmation"><input required type="checkbox" checked={updatePrivateEvidenceConfirmed} onChange={(e) => setUpdatePrivateEvidenceConfirmed(e.target.checked)} />I confirm this update contains only consented behavioral evidence and omits raw transcripts, ratings, and confidential details.</label>}<button className="primary" disabled={busy}>{busy ? "Appending…" : "Append update"}</button></form></aside>
             </div>
           </section>
         )}

@@ -25,6 +25,7 @@ A private, dynamic, evidence-preserving apprenticeship is operating through Site
 - [Define the Daily Brief curation and Reading Record standard](issues/05-define-daily-brief-standard.md) — Curate four distinct readings within 55 minutes through evidence, purpose, access, freshness, balance, deduplication, rights, and preservation gates, then preserve each assignment and every later event without rewriting history.
 - [Design the rapid screen and Weekly Underwrite](issues/06-design-rapid-screen-and-weekly-underwrite.md) — Lock a causal 20-minute Snapshot, then investigate three Load-Bearing Questions through traceable support, disconfirmation, Founder Evidence, a Countercase, and an explicit Decision Delta without producing a checklist score.
 - [Design Forecast and Second-Order Map practice](issues/07-design-forecasting-and-second-order-practice.md) — Preserve immutable probabilistic Forecasts, trace explicit first-, second-, and third-order consequences, and use atomic Monthly Calibration Reviews to resolve outcomes, calculate Brier scores, diagnose mistakes, and change future decision rules.
+- [Design Founder Evidence training](issues/08-design-founder-judgment-training.md) — Use immutable Founder Evidence Reviews for public and private encounters, separate observed behavior from inference across six dimensions, preserve gaps and counterevidence, reject founder scoring, and link only exact same-Snapshot reviews into Underwrites.
 
 ## Not yet specified
 
