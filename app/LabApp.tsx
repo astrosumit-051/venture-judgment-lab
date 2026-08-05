@@ -150,6 +150,16 @@ function formatTime(value: string): string {
   }).format(new Date(value));
 }
 
+function formatBriefDate(value: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: dailyBrief.timezone,
+  }).format(new Date(`${value}T12:00:00-05:00`));
+}
+
 function recordLabel(type: string): string {
   return {
     daily_brief: "Daily Brief",
@@ -492,7 +502,7 @@ export function LabApp({ displayName }: { displayName: string }) {
 
       <main className="workspace">
         <header className="topbar">
-          <div><span className="eyebrow">Wednesday · August 5, 2026</span><h1>{view === "today" ? `Good morning, ${displayName}.` : navItems.find((item) => item.id === view)?.label}</h1></div>
+          <div><span className="eyebrow">{formatBriefDate(dailyBrief.assignedDate)}</span><h1>{view === "today" ? `Good morning, ${displayName}.` : navItems.find((item) => item.id === view)?.label}</h1></div>
           <button className="mode-chip" onClick={() => setView("plan")}><span>{activeMode}</span><strong>{modeDefinition.totalMinutes / 60}h</strong></button>
         </header>
 
