@@ -50,6 +50,9 @@ export async function ensureLabSchema(): Promise<D1Database> {
     db.prepare(
       "CREATE INDEX IF NOT EXISTS idx_lab_events_owner_occurred ON lab_events(owner_id, occurred_at)",
     ),
+    db.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_events_unique_forecast_resolution ON lab_events(record_id) WHERE event_type = 'forecast_resolution'",
+    ),
     db.prepare("PRAGMA optimize"),
   ]);
   return db;

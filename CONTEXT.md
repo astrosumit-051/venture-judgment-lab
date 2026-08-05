@@ -93,7 +93,7 @@ The dated explanation of what a deeper Underwrite retained, changed, or reversed
 _Avoid_: Rewritten first impression, unexplained confidence change
 
 **Calibration Review**:
-A monthly comparison of prior predictions and investment judgments with later evidence, preserving the original view and recording why it was right, wrong, or unresolved.
+A monthly comparison of prior predictions, investment judgments, sourcing results, and analytical mistakes with later evidence. It preserves the original view, resolves eligible Forecasts without changing their odds, measures probabilistic accuracy with a Brier score, records a changed decision rule, and names the next practice that applies it.
 _Avoid_: Progress recap, hindsight rewrite
 
 **Forecast**:
@@ -101,7 +101,7 @@ A falsifiable claim about a future event with an explicit probability, time hori
 _Avoid_: Prediction without odds, confident narrative
 
 **Second-Order Map**:
-A causal map tracing how an event changes bottlenecks, incentives, suppliers, customers, substitutes, regulation, and adjacent domains across successive effects.
+A causal map tracing an event through an explicit direct consequence, actor response, and resulting third-order behavior or equilibrium, then stress-testing bottlenecks, incentives, suppliers, customers, substitutes, regulation, adjacent domains, and disconfirming evidence.
 _Avoid_: Trend list, thematic brainstorming
 
 **Snapshot Judgment**:

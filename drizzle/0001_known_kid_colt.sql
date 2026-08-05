@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `idx_lab_events_unique_forecast_resolution` ON `lab_events` (`record_id`) WHERE "lab_events"."event_type" = 'forecast_resolution';

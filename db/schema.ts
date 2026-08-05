@@ -1,4 +1,5 @@
-import { index, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
+import { index, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const labRecords = sqliteTable(
   "lab_records",
@@ -43,5 +44,8 @@ export const labEvents = sqliteTable(
       table.ownerId,
       table.occurredAt,
     ),
+    uniqueIndex("idx_lab_events_unique_forecast_resolution")
+      .on(table.recordId)
+      .where(sql`${table.eventType} = 'forecast_resolution'`),
   ],
 );

@@ -1,9 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { calculateBrierScore, dateInTimeZone, type ForecastOutcome } from "./calibration";
 import { dailyBrief } from "./dailyBrief";
 
-type View = "today" | "brief" | "snapshot" | "forecast" | "map" | "underwrite" | "plan" | "history";
+type View = "today" | "brief" | "snapshot" | "forecast" | "map" | "underwrite" | "calibrate" | "plan" | "history";
 
 type LabRecord = {
   id: string;
@@ -34,6 +35,13 @@ type EvidenceRow = {
   inference: string;
 };
 
+type ResolutionDraft = {
+  selected: boolean;
+  outcome: ForecastOutcome;
+  resolutionEvidence: string;
+  resolutionSource: string;
+};
+
 const navItems: Array<{ id: View; key: string; label: string; hint: string }> = [
   { id: "today", key: "T", label: "Today", hint: "The next judgment" },
   { id: "brief", key: "B", label: "Brief", hint: "Four real readings" },
@@ -41,6 +49,7 @@ const navItems: Array<{ id: View; key: string; label: string; hint: string }> = 
   { id: "forecast", key: "F", label: "Forecast", hint: "Put odds on it" },
   { id: "map", key: "M", label: "2nd Order", hint: "Trace consequences" },
   { id: "underwrite", key: "U", label: "Underwrite", hint: "Test the crux" },
+  { id: "calibrate", key: "C", label: "Calibrate", hint: "Score prior judgment" },
   { id: "plan", key: "P", label: "Practice", hint: "Choose the week mode" },
   { id: "history", key: "H", label: "History", hint: "Nothing rewritten" },
 ];
@@ -105,6 +114,8 @@ const emptyForecast = {
 const emptyMap = {
   trigger: "",
   firstOrder: "",
+  secondOrder: "",
+  thirdOrder: "",
   bottlenecks: "",
   incentives: "",
   suppliers: "",
@@ -114,6 +125,24 @@ const emptyMap = {
   adjacentEffects: "",
   disconfirmingEvidence: "",
 };
+
+const emptyCalibration = {
+  reviewMonth: "2026-08",
+  sourcingResults: "",
+  analyticalMistakes: "",
+  judgmentComparison: "",
+  laterEvidence: "",
+  updatedDecisionRule: "",
+  findings: "",
+  restartPlan: "",
+};
+
+const emptyResolutionDraft = (): ResolutionDraft => ({
+  selected: false,
+  outcome: 1,
+  resolutionEvidence: "",
+  resolutionSource: "",
+});
 
 const emptyUnderwrite = {
   snapshotId: "",
@@ -218,8 +247,14 @@ function keyEvidence(record: LabRecord): Array<[string, string]> {
   ];
   if (record.recordType === "second_order_map") return [
     ["Trigger", textValue(p, "trigger")],
-    ["Bottlenecks", textValue(p, "bottlenecks")],
-    ["Adjacent effects", textValue(p, "adjacentEffects")],
+    ["First order", textValue(p, "firstOrder")],
+    ["Second order", textValue(p, "secondOrder")],
+    ["Third order", textValue(p, "thirdOrder")],
+  ];
+  if (record.recordType === "calibration_review") return [
+    ["Brier score", p.brierScore === null ? "No resolved Forecasts" : String(p.brierScore)],
+    ["Analytical mistakes", textValue(p, "analyticalMistakes")],
+    ["Updated decision rule", textValue(p, "updatedDecisionRule")],
   ];
   return [];
 }
@@ -242,6 +277,9 @@ export function LabApp({ displayName }: { displayName: string }) {
   const [forecast, setForecast] = useState(emptyForecast);
   const [secondOrder, setSecondOrder] = useState(emptyMap);
   const [underwrite, setUnderwrite] = useState(emptyUnderwrite);
+  const [calibration, setCalibration] = useState(emptyCalibration);
+  const [resolutionDrafts, setResolutionDrafts] = useState<Record<string, ResolutionDraft>>({});
+  const [reviewedJudgmentIds, setReviewedJudgmentIds] = useState<string[]>([]);
   const [ledger, setLedger] = useState<EvidenceRow[]>([emptyEvidenceRow(), emptyEvidenceRow(), emptyEvidenceRow()]);
   const [plan, setPlan] = useState({
     weekOf: "2026-08-03",
@@ -258,6 +296,22 @@ export function LabApp({ displayName }: { displayName: string }) {
 
   const snapshots = useMemo(
     () => data.records.filter((record) => record.recordType === "snapshot_judgment"),
+    [data.records],
+  );
+  const forecasts = useMemo(
+    () => data.records.filter((record) => record.recordType === "forecast"),
+    [data.records],
+  );
+  const resolvedForecastIds = useMemo(
+    () => new Set(data.events.filter((event) => event.eventType === "forecast_resolution").map((event) => event.recordId)),
+    [data.events],
+  );
+  const openForecasts = useMemo(
+    () => forecasts.filter((record) => !resolvedForecastIds.has(record.id)),
+    [forecasts, resolvedForecastIds],
+  );
+  const priorJudgments = useMemo(
+    () => data.records.filter((record) => new Set(["snapshot_judgment", "weekly_underwrite"]).has(record.recordType)),
     [data.records],
   );
   const topLevelRecords = useMemo(
@@ -399,6 +453,46 @@ export function LabApp({ displayName }: { displayName: string }) {
     }
   }
 
+  function updateResolution(forecastId: string, patch: Partial<ResolutionDraft>) {
+    setResolutionDrafts((current) => ({
+      ...current,
+      [forecastId]: { ...(current[forecastId] ?? emptyResolutionDraft()), ...patch },
+    }));
+  }
+
+  async function commitCalibration(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const resolvedForecasts = openForecasts
+      .filter((record) => resolutionDrafts[record.id]?.selected)
+      .map((record) => {
+        const draft = resolutionDrafts[record.id];
+        return {
+          forecastId: record.id,
+          outcome: draft.outcome,
+          resolutionEvidence: draft.resolutionEvidence.trim(),
+          resolutionSource: draft.resolutionSource.trim(),
+        };
+      });
+    const incomplete = resolvedForecasts.some((item) => !item.resolutionEvidence || !item.resolutionSource);
+    if (incomplete) {
+      setNotice("Every resolved Forecast needs outcome evidence and a resolution source.");
+      return;
+    }
+    const saved = await post({
+      operation: "commit_calibration_review",
+      title: `Calibration Review — ${calibration.reviewMonth}`,
+      payload: { ...calibration, reviewedJudgmentIds },
+      resolvedForecasts,
+    });
+    if (saved) {
+      setCalibration(emptyCalibration);
+      setResolutionDrafts({});
+      setReviewedJudgmentIds([]);
+      setNotice("Calibration Review preserved. Original probabilities remain unchanged beside their outcomes.");
+      setView("history");
+    }
+  }
+
   function updateLedger(index: number, patch: Partial<EvidenceRow>) {
     setLedger((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
   }
@@ -479,8 +573,17 @@ export function LabApp({ displayName }: { displayName: string }) {
     snapshots: snapshots.length,
     forecasts: topLevelRecords.filter((record) => record.recordType === "forecast").length,
     underwrites: topLevelRecords.filter((record) => record.recordType === "weekly_underwrite").length,
+    calibrations: topLevelRecords.filter((record) => record.recordType === "calibration_review").length,
   };
   const latestSnapshot = snapshots[0];
+  const calibrationPreview = openForecasts
+    .filter((record) => resolutionDrafts[record.id]?.selected)
+    .map((record) => {
+      const probability = numberValue(record.payload, "probability");
+      const outcome = resolutionDrafts[record.id]?.outcome ?? 1;
+      return { probability, outcome };
+    });
+  const previewBrier = calculateBrierScore(calibrationPreview);
 
   return (
     <div className="lab-shell">
@@ -549,6 +652,7 @@ export function LabApp({ displayName }: { displayName: string }) {
               <div><strong>{progress.snapshots}</strong><span>Snapshots</span></div>
               <div><strong>{progress.forecasts}</strong><span>Forecasts</span></div>
               <div><strong>{progress.underwrites}</strong><span>Underwrites</span></div>
+              <div><strong>{progress.calibrations}</strong><span>Calibrations</span></div>
               <p>Repetitions are evidence, not points. Quality appears in later updates and calibration.</p>
             </div>
 
@@ -616,8 +720,8 @@ export function LabApp({ displayName }: { displayName: string }) {
           <section className="view form-view">
             <div className="intro-row"><div><span className="eyebrow coral">Second-Order Map</span><h2>Trace what changes after the headline.</h2></div><p>Follow bottlenecks and incentives across the system. Do not turn a trend into a list of themes.</p></div>
             <form className="judgment-form" onSubmit={commitSecondOrderMap}>
-              <fieldset><legend><span>01</span> Name the trigger and first effect</legend><label>Trigger event<textarea required rows={2} value={secondOrder.trigger} onChange={(e) => setSecondOrder({ ...secondOrder, trigger: e.target.value })} /></label><label>First-order consequence<textarea required rows={2} value={secondOrder.firstOrder} onChange={(e) => setSecondOrder({ ...secondOrder, firstOrder: e.target.value })} /></label></fieldset>
-              <fieldset><legend><span>02</span> Follow the system</legend><div className="field-grid two"><label>Bottlenecks<textarea required rows={3} value={secondOrder.bottlenecks} onChange={(e) => setSecondOrder({ ...secondOrder, bottlenecks: e.target.value })} /></label><label>Incentives<textarea required rows={3} value={secondOrder.incentives} onChange={(e) => setSecondOrder({ ...secondOrder, incentives: e.target.value })} /></label><label>Suppliers<textarea required rows={3} value={secondOrder.suppliers} onChange={(e) => setSecondOrder({ ...secondOrder, suppliers: e.target.value })} /></label><label>Customers<textarea required rows={3} value={secondOrder.customers} onChange={(e) => setSecondOrder({ ...secondOrder, customers: e.target.value })} /></label><label>Substitutes<textarea required rows={3} value={secondOrder.substitutes} onChange={(e) => setSecondOrder({ ...secondOrder, substitutes: e.target.value })} /></label><label>Regulation<textarea required rows={3} value={secondOrder.regulation} onChange={(e) => setSecondOrder({ ...secondOrder, regulation: e.target.value })} /></label></div><label>Adjacent-domain effects<textarea required rows={3} value={secondOrder.adjacentEffects} onChange={(e) => setSecondOrder({ ...secondOrder, adjacentEffects: e.target.value })} /></label><label>Evidence that would break this causal map<textarea required rows={3} value={secondOrder.disconfirmingEvidence} onChange={(e) => setSecondOrder({ ...secondOrder, disconfirmingEvidence: e.target.value })} /></label></fieldset>
+              <fieldset><legend><span>01</span> Trace three causal steps</legend><label>Trigger event<textarea required rows={2} value={secondOrder.trigger} onChange={(e) => setSecondOrder({ ...secondOrder, trigger: e.target.value })} /></label><label>First-order consequence<textarea required rows={2} value={secondOrder.firstOrder} onChange={(e) => setSecondOrder({ ...secondOrder, firstOrder: e.target.value })} placeholder="What changes directly because of the trigger?" /></label><label>Second-order consequence<textarea required rows={2} value={secondOrder.secondOrder} onChange={(e) => setSecondOrder({ ...secondOrder, secondOrder: e.target.value })} placeholder="What changes because actors respond to the first effect?" /></label><label>Third-order consequence<textarea required rows={2} value={secondOrder.thirdOrder} onChange={(e) => setSecondOrder({ ...secondOrder, thirdOrder: e.target.value })} placeholder="What new equilibrium, behavior, or adjacent effect follows?" /></label></fieldset>
+              <fieldset><legend><span>02</span> Stress-test the system</legend><div className="field-grid two"><label>Bottlenecks<textarea required rows={3} value={secondOrder.bottlenecks} onChange={(e) => setSecondOrder({ ...secondOrder, bottlenecks: e.target.value })} /></label><label>Incentives<textarea required rows={3} value={secondOrder.incentives} onChange={(e) => setSecondOrder({ ...secondOrder, incentives: e.target.value })} /></label><label>Suppliers<textarea required rows={3} value={secondOrder.suppliers} onChange={(e) => setSecondOrder({ ...secondOrder, suppliers: e.target.value })} /></label><label>Customers<textarea required rows={3} value={secondOrder.customers} onChange={(e) => setSecondOrder({ ...secondOrder, customers: e.target.value })} /></label><label>Substitutes<textarea required rows={3} value={secondOrder.substitutes} onChange={(e) => setSecondOrder({ ...secondOrder, substitutes: e.target.value })} /></label><label>Regulation<textarea required rows={3} value={secondOrder.regulation} onChange={(e) => setSecondOrder({ ...secondOrder, regulation: e.target.value })} /></label></div><label>Adjacent-domain effects<textarea required rows={3} value={secondOrder.adjacentEffects} onChange={(e) => setSecondOrder({ ...secondOrder, adjacentEffects: e.target.value })} /></label><label>Evidence that would break this causal map<textarea required rows={3} value={secondOrder.disconfirmingEvidence} onChange={(e) => setSecondOrder({ ...secondOrder, disconfirmingEvidence: e.target.value })} /></label></fieldset>
               <CommitBar busy={busy} label="Commit Second-Order Map" busyLabel="Preserving…" />
             </form>
           </section>
@@ -639,6 +743,23 @@ export function LabApp({ displayName }: { displayName: string }) {
           </section>
         )}
 
+        {view === "calibrate" && (
+          <section className="view form-view">
+            <div className="intro-row"><div><span className="eyebrow coral">Monthly Calibration Review · 60 minutes</span><h2>Score the prediction. Diagnose the process.</h2></div><p>Resolve prior Forecasts against evidence, measure probabilistic accuracy, and change one decision rule. Persuasive hindsight earns no credit.</p></div>
+            <form className="judgment-form" onSubmit={commitCalibration}>
+              <fieldset><legend><span>01</span> Resolve eligible Forecasts</legend><label>Review month<input required type="month" value={calibration.reviewMonth} onChange={(e) => setCalibration({ ...calibration, reviewMonth: e.target.value })} /></label>
+                {!openForecasts.length && <div className="locked-view"><span>No unresolved Forecasts</span><p>Complete the process review below. Your Brier score will remain unscored until an outcome resolves.</p></div>}
+                <div className="resolution-list">{openForecasts.map((record) => { const draft = resolutionDrafts[record.id] ?? emptyResolutionDraft(); const forecastTimezone = textValue(record.payload, "timezone") || dailyBrief.timezone; const canResolveNegative = dateInTimeZone(new Date(), forecastTimezone) > textValue(record.payload, "resolutionDate"); return <article className={draft.selected ? "resolution-row selected" : "resolution-row"} key={record.id}><label className="resolution-check"><input type="checkbox" checked={draft.selected} onChange={(e) => updateResolution(record.id, { selected: e.target.checked })} /><span><strong>{numberValue(record.payload, "probability")}%</strong>{textValue(record.payload, "claim")}</span></label>{draft.selected && <div className="resolution-fields"><label>Observed outcome<select value={draft.outcome} onChange={(e) => updateResolution(record.id, { outcome: Number(e.target.value) as ForecastOutcome })}><option value={1}>Occurred</option><option value={0} disabled={!canResolveNegative}>Did not occur</option></select>{!canResolveNegative && <small>A negative outcome can be resolved only after {textValue(record.payload, "resolutionDate")} has fully elapsed in {forecastTimezone}. An event that already occurred may be resolved early.</small>}</label><label>Resolution evidence<textarea required rows={2} value={draft.resolutionEvidence} onChange={(e) => updateResolution(record.id, { resolutionEvidence: e.target.value })} placeholder="What happened, stated without rewriting the original claim." /></label><label>Resolution source URL<input required type="url" value={draft.resolutionSource} onChange={(e) => updateResolution(record.id, { resolutionSource: e.target.value })} placeholder="https://" /></label></div>}</article>; })}</div>
+                <div className="score-card"><span className="eyebrow">Brier score</span><strong>{previewBrier ?? "—"}</strong><p>0 is perfect. Lower is better. The score uses the original probability and the observed binary outcome.</p></div>
+              </fieldset>
+              <fieldset><legend><span>02</span> Compare investment judgments with later evidence</legend>{!priorJudgments.length ? <div className="locked-view"><span>No prior company judgments</span><p>Record that absence explicitly below; future reviews will compare locked Snapshots and Underwrites.</p></div> : <div className="judgment-choice-list">{priorJudgments.map((record) => <label className="judgment-choice" key={record.id}><input type="checkbox" checked={reviewedJudgmentIds.includes(record.id)} onChange={(e) => setReviewedJudgmentIds((current) => e.target.checked ? [...current, record.id] : current.filter((id) => id !== record.id))} /><span><strong>{recordLabel(record.recordType)}</strong>{record.title}</span></label>)}</div>}<label>Later evidence<textarea required rows={3} value={calibration.laterEvidence} onChange={(e) => setCalibration({ ...calibration, laterEvidence: e.target.value })} placeholder="What became observable after the original Snapshot or Underwrite? Cite the decisive evidence in the text or append its source in History." /></label><label>Judgment comparison<textarea required rows={3} value={calibration.judgmentComparison} onChange={(e) => setCalibration({ ...calibration, judgmentComparison: e.target.value })} placeholder="What did the original judgment get right, wrong, or leave unresolved—and was the process sound?" /></label></fieldset>
+              <fieldset><legend><span>03</span> Audit sourcing and analytical mistakes</legend><label>Sourcing results<textarea required rows={3} value={calibration.sourcingResults} onChange={(e) => setCalibration({ ...calibration, sourcingResults: e.target.value })} placeholder="Which discovery channels produced credible companies, conversations, or dead ends?" /></label><label>Analytical mistakes<textarea required rows={3} value={calibration.analyticalMistakes} onChange={(e) => setCalibration({ ...calibration, analyticalMistakes: e.target.value })} placeholder="Name the reasoning error, missing evidence, or confidence failure—not merely the bad outcome." /></label><label>Calibration findings<textarea required rows={3} value={calibration.findings} onChange={(e) => setCalibration({ ...calibration, findings: e.target.value })} placeholder="Where were you overconfident, underconfident, right for the wrong reason, or still unresolved?" /></label></fieldset>
+              <fieldset><legend><span>04</span> Change future behavior</legend><label>Updated decision rule<textarea required rows={3} value={calibration.updatedDecisionRule} onChange={(e) => setCalibration({ ...calibration, updatedDecisionRule: e.target.value })} placeholder="When the same pattern appears again, what concrete rule will govern your evidence or confidence?" /></label><label>Restart plan<textarea required rows={3} value={calibration.restartPlan} onChange={(e) => setCalibration({ ...calibration, restartPlan: e.target.value })} placeholder="Name the next Forecast, company judgment, sourcing test, or map that applies the update." /></label></fieldset>
+              <CommitBar busy={busy} label="Commit Calibration Review" busyLabel="Scoring and preserving…" />
+            </form>
+          </section>
+        )}
+
         {view === "plan" && (
           <section className="view form-view">
             <div className="intro-row"><div><span className="eyebrow coral">Sustainable practice architecture</span><h2>Change the mix, never inflate the week.</h2></div><p>Exam Mode wins when conditions overlap. Displaced work is recorded and never becomes catch-up debt.</p></div>
@@ -654,7 +775,7 @@ export function LabApp({ displayName }: { displayName: string }) {
         {view === "history" && (
           <section className="view">
             <div className="intro-row"><div><span className="eyebrow coral">Private Learning Record</span><h2>Originals stay. Updates accumulate.</h2></div><p>Resolve Forecasts, record corrections, and add hindsight here. Nothing below edits the evidence you committed earlier.</p></div>
-            <div className="history-tools"><label>Show<select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value)}><option value="all">All records</option><option value="daily_brief">Daily Briefs</option><option value="snapshot_judgment">Snapshots</option><option value="forecast">Forecasts</option><option value="second_order_map">Second-Order Maps</option><option value="weekly_underwrite">Underwrites</option><option value="weekly_plan">Practice plans</option></select></label><span>{filteredRecords.length} immutable submission{filteredRecords.length === 1 ? "" : "s"}</span></div>
+            <div className="history-tools"><label>Show<select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value)}><option value="all">All records</option><option value="daily_brief">Daily Briefs</option><option value="snapshot_judgment">Snapshots</option><option value="forecast">Forecasts</option><option value="second_order_map">Second-Order Maps</option><option value="weekly_underwrite">Underwrites</option><option value="calibration_review">Calibration Reviews</option><option value="weekly_plan">Practice plans</option></select></label><span>{filteredRecords.length} immutable submission{filteredRecords.length === 1 ? "" : "s"}</span></div>
             <div className="history-layout">
               <div className="timeline">
                 {loading && <div className="empty-history"><p>Opening your private record…</p></div>}
@@ -662,10 +783,10 @@ export function LabApp({ displayName }: { displayName: string }) {
                 {filteredRecords.map((record) => {
                   const childReadings = data.records.filter((item) => item.parentId === record.id && item.recordType === "reading_record");
                   const events = data.events.filter((event) => event.recordId === record.id || childReadings.some((reading) => reading.id === event.recordId));
-                  return <article className="timeline-record" key={record.id}><span className="timeline-dot" /><div className="record-head"><span>{recordLabel(record.recordType)}</span><time>{formatTime(record.committedAt)}</time></div><h3>{record.title}</h3><p>{recordSummary(record)}</p>{childReadings.length > 0 && <div className="reading-archive">{childReadings.map((reading) => <a key={reading.id} href={textValue(reading.payload, "canonicalUrl")} target="_blank" rel="noreferrer"><span>{textValue(reading.payload, "lane")}</span><strong>{reading.title}</strong><small>{textValue(reading.payload, "learnerResponse")}</small></a>)}</div>}{keyEvidence(record).length > 0 && <details className="evidence-details"><summary>Inspect committed evidence</summary>{keyEvidence(record).map(([label, value]) => <div key={label}><strong>{label}</strong><p>{value}</p></div>)}</details>}{events.map((event) => <div className="event" key={event.id}><span>{eventLabel(event.eventType)}</span><time>{formatTime(event.occurredAt)}</time><p>{textValue(event.eventData, "text")}</p></div>)}</article>;
+                  return <article className="timeline-record" key={record.id}><span className="timeline-dot" /><div className="record-head"><span>{recordLabel(record.recordType)}</span><time>{formatTime(record.committedAt)}</time></div><h3>{record.title}</h3><p>{recordSummary(record)}</p>{childReadings.length > 0 && <div className="reading-archive">{childReadings.map((reading) => <a key={reading.id} href={textValue(reading.payload, "canonicalUrl")} target="_blank" rel="noreferrer"><span>{textValue(reading.payload, "lane")}</span><strong>{reading.title}</strong><small>{textValue(reading.payload, "learnerResponse")}</small></a>)}</div>}{keyEvidence(record).length > 0 && <details className="evidence-details"><summary>Inspect committed evidence</summary>{keyEvidence(record).map(([label, value]) => <div key={label}><strong>{label}</strong><p>{value}</p></div>)}</details>}{events.map((event) => { const resolutionSource = textValue(event.eventData, "resolutionSource"); const reviewId = textValue(event.eventData, "calibrationReviewId"); const linkedReview = reviewId ? data.records.find((item) => item.id === reviewId) : undefined; return <div className="event" key={event.id}><span>{eventLabel(event.eventType)}</span><time>{formatTime(event.occurredAt)}</time><p>{textValue(event.eventData, "text")}</p>{(resolutionSource || linkedReview) && <div className="event-links">{resolutionSource && <a href={resolutionSource} target="_blank" rel="noreferrer">Open resolution source ↗</a>}{linkedReview && <span>Recorded in {linkedReview.title}</span>}</div>}</div>; })}</article>;
                 })}
               </div>
-              <aside className="append-card"><span className="eyebrow coral">Append, never overwrite</span><h3>Add later evidence</h3><p>Use this for Forecast resolution, correction, source status, coaching, calibration, or reflection.</p><form onSubmit={appendUpdate}><label>Original record<select required value={updateRecord} onChange={(e) => setUpdateRecord(e.target.value)}><option value="">Choose a record…</option>{data.records.map((record) => <option key={record.id} value={record.id}>{recordLabel(record.recordType)} · {record.title}</option>)}</select></label><label>Update type<select value={updateType} onChange={(e) => setUpdateType(e.target.value)}><option value="reflection">Reflection</option><option value="forecast_resolution">Forecast resolution</option><option value="calibration_review">Calibration review</option><option value="coach_feedback">Coach feedback</option><option value="later_usefulness">Later usefulness</option><option value="source_status">Source status</option><option value="metadata_correction">Metadata correction</option><option value="missed_practice">Missed practice</option></select></label><label>Dated update<textarea required rows={5} value={updateText} onChange={(e) => setUpdateText(e.target.value)} placeholder="State the new evidence, source, outcome, or correction. Do not restate history as if you knew it earlier." /></label><button className="primary" disabled={busy}>{busy ? "Appending…" : "Append update"}</button></form></aside>
+              <aside className="append-card"><span className="eyebrow coral">Append, never overwrite</span><h3>Add later evidence</h3><p>Use this for reflection, correction, source status, coaching, or later usefulness. Resolve Forecasts only through a Calibration Review so outcome evidence and scoring remain complete.</p><form onSubmit={appendUpdate}><label>Original record<select required value={updateRecord} onChange={(e) => setUpdateRecord(e.target.value)}><option value="">Choose a record…</option>{data.records.map((record) => <option key={record.id} value={record.id}>{recordLabel(record.recordType)} · {record.title}</option>)}</select></label><label>Update type<select value={updateType} onChange={(e) => setUpdateType(e.target.value)}><option value="reflection">Reflection</option><option value="coach_feedback">Coach feedback</option><option value="later_usefulness">Later usefulness</option><option value="source_status">Source status</option><option value="metadata_correction">Metadata correction</option><option value="missed_practice">Missed practice</option></select></label><label>Dated update<textarea required rows={5} value={updateText} onChange={(e) => setUpdateText(e.target.value)} placeholder="State the new evidence, source, outcome, or correction. Do not restate history as if you knew it earlier." /></label><button className="primary" disabled={busy}>{busy ? "Appending…" : "Append update"}</button></form></aside>
             </div>
           </section>
         )}

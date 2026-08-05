@@ -1,4 +1,11 @@
 import { getChatGPTUser } from "@/app/chatgpt-auth";
+import {
+  calculateBrierScore,
+  dateInTimeZone,
+  isCanonicalDate,
+  isValidTimeZone,
+  type ForecastOutcome,
+} from "@/app/calibration";
 import { ensureLabSchema } from "@/db/runtime";
 
 export const dynamic = "force-dynamic";
@@ -31,10 +38,10 @@ const recordRequirements: Record<string, string[]> = {
   ],
   forecast: [
     "claim", "probability", "resolutionDate", "supportingEvidence",
-    "disconfirmingCondition", "resolutionSource",
+    "disconfirmingCondition", "resolutionSource", "timezone",
   ],
   second_order_map: [
-    "trigger", "firstOrder", "bottlenecks", "incentives", "suppliers",
+    "trigger", "firstOrder", "secondOrder", "thirdOrder", "bottlenecks", "incentives", "suppliers",
     "customers", "substitutes", "regulation", "adjacentEffects",
     "disconfirmingEvidence",
   ],
@@ -44,7 +51,10 @@ const recordRequirements: Record<string, string[]> = {
     "disposition", "confidence", "decisionDelta", "nextEvidence",
   ],
   weekly_plan: ["weekOf", "mode", "rationale", "totalMinutes", "dailyLoops"],
-  calibration_review: ["reviewedRecordIds", "findings", "restartPlan"],
+  calibration_review: [
+    "reviewMonth", "sourcingResults", "analyticalMistakes", "judgmentComparison", "laterEvidence",
+    "updatedDecisionRule", "findings", "restartPlan",
+  ],
 };
 
 const allowedEventTypes = new Set([
@@ -53,8 +63,6 @@ const allowedEventTypes = new Set([
   "metadata_correction",
   "coach_feedback",
   "later_usefulness",
-  "forecast_resolution",
-  "calibration_review",
   "missed_practice",
 ]);
 
@@ -115,7 +123,9 @@ function validatePayload(recordType: string, payload: Record<string, unknown>): 
   }
   if (recordType === "forecast") {
     const probability = Number(payload.probability);
-    if (probability < 1 || probability > 99) return "Forecast probability must be between 1% and 99%.";
+    if (!Number.isFinite(probability) || probability < 1 || probability > 99) return "Forecast probability must be between 1% and 99%.";
+    if (!isCanonicalDate(payload.resolutionDate)) return "The Forecast needs a real resolution date in YYYY-MM-DD format.";
+    if (!isValidTimeZone(payload.timezone)) return "The Forecast needs a valid preserved timezone.";
     if (!safeHttpUrl(payload.resolutionSource)) return "The Forecast needs a valid resolution source.";
   }
   if (recordType === "weekly_underwrite") {
@@ -327,6 +337,135 @@ export async function POST(request: Request) {
     return Response.json({ id: briefId, readingIds, committedAt: now }, { status: 201 });
   }
 
+  if (operation === "commit_calibration_review") {
+    const title = cleanText(body.title, 180);
+    const payload = body.payload;
+    const resolvedForecasts = body.resolvedForecasts;
+    if (!title || !isObject(payload) || !Array.isArray(resolvedForecasts)) {
+      return Response.json({ error: "Complete the Calibration Review and its Forecast outcomes." }, { status: 400 });
+    }
+    const invalid = validatePayload("calibration_review", payload);
+    if (invalid) return Response.json({ error: invalid }, { status: 400 });
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(cleanText(payload.reviewMonth, 20))) {
+      return Response.json({ error: "Choose a valid month for the Calibration Review." }, { status: 400 });
+    }
+    const reviewedJudgmentIds = Array.isArray(payload.reviewedJudgmentIds)
+      ? payload.reviewedJudgmentIds.map((value) => cleanText(value, 80)).filter(Boolean)
+      : [];
+    if (new Set(reviewedJudgmentIds).size !== reviewedJudgmentIds.length) {
+      return Response.json({ error: "Choose each prior investment judgment only once." }, { status: 400 });
+    }
+
+    const seen = new Set<string>();
+    const requested = [] as Array<{
+      forecastId: string;
+      outcome: ForecastOutcome;
+      resolutionEvidence: string;
+      resolutionSource: string;
+    }>;
+    for (const item of resolvedForecasts) {
+      if (!isObject(item)) return Response.json({ error: "Every Forecast outcome must be structured evidence." }, { status: 400 });
+      const forecastId = cleanText(item.forecastId, 80);
+      const outcome = Number(item.outcome) as ForecastOutcome;
+      const resolutionEvidence = cleanText(item.resolutionEvidence, 5000);
+      const resolutionSource = cleanText(item.resolutionSource, 2000);
+      if (!forecastId || seen.has(forecastId) || (outcome !== 0 && outcome !== 1) || !resolutionEvidence || !safeHttpUrl(resolutionSource)) {
+        return Response.json({ error: "Each resolved Forecast needs one binary outcome, evidence, and a valid source." }, { status: 400 });
+      }
+      seen.add(forecastId);
+      requested.push({ forecastId, outcome, resolutionEvidence, resolutionSource });
+    }
+
+    const [forecastRows, resolutionRows, judgmentRows] = await Promise.all([
+      db.prepare(
+        "SELECT id, payload_json FROM lab_records WHERE owner_id = ? AND record_type = 'forecast'",
+      ).bind(owner).all<{ id: string; payload_json: string }>(),
+      db.prepare(
+        "SELECT record_id FROM lab_events WHERE owner_id = ? AND event_type = 'forecast_resolution'",
+      ).bind(owner).all<{ record_id: string }>(),
+      db.prepare(
+        "SELECT id FROM lab_records WHERE owner_id = ? AND record_type IN ('snapshot_judgment', 'weekly_underwrite')",
+      ).bind(owner).all<{ id: string }>(),
+    ]);
+    const forecastById = new Map((forecastRows.results ?? []).map((row) => [row.id, parseJson(row.payload_json)]));
+    const alreadyResolved = new Set((resolutionRows.results ?? []).map((row) => row.record_id));
+    if (requested.some((item) => !forecastById.has(item.forecastId))) {
+      return Response.json({ error: "A selected Forecast was not found in your private record." }, { status: 404 });
+    }
+    if (requested.some((item) => alreadyResolved.has(item.forecastId))) {
+      return Response.json({ error: "A selected Forecast already has a preserved resolution." }, { status: 409 });
+    }
+    const prematurelyNegative = requested.find((item) => {
+      const originalForecast = forecastById.get(item.forecastId);
+      const resolutionDate = cleanText(originalForecast?.resolutionDate, 20);
+      const timezone = cleanText(originalForecast?.timezone, 80);
+      return item.outcome === 0 && resolutionDate >= dateInTimeZone(new Date(), timezone);
+    });
+    if (prematurelyNegative) {
+      const originalForecast = forecastById.get(prematurelyNegative.forecastId);
+      const resolutionDate = cleanText(originalForecast?.resolutionDate, 20);
+      const timezone = cleanText(originalForecast?.timezone, 80);
+      return Response.json({ error: `A Forecast cannot be resolved negatively until ${resolutionDate} has fully elapsed in ${timezone}.` }, { status: 400 });
+    }
+    const availableJudgmentIds = new Set((judgmentRows.results ?? []).map((row) => row.id));
+    if (availableJudgmentIds.size > 0 && reviewedJudgmentIds.length === 0) {
+      return Response.json({ error: "Compare at least one prior Snapshot or Underwrite in this Calibration Review." }, { status: 400 });
+    }
+    if (reviewedJudgmentIds.some((id) => !availableJudgmentIds.has(id))) {
+      return Response.json({ error: "A selected investment judgment was not found in your private record." }, { status: 404 });
+    }
+
+    const scoredForecasts = requested.map((item) => {
+      const originalForecast = forecastById.get(item.forecastId);
+      const originalProbability = Number(originalForecast?.probability);
+      if (!Number.isFinite(originalProbability) || originalProbability < 1 || originalProbability > 99) {
+        throw new Error("A selected Forecast has an invalid original probability.");
+      }
+      return { ...item, originalProbability };
+    });
+    const brierScore = calculateBrierScore(scoredForecasts.map((item) => ({ probability: item.originalProbability, outcome: item.outcome })));
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const reviewPayload = {
+      ...payload,
+      resolvedForecasts: scoredForecasts,
+      brierScore,
+      calibrationStatus: scoredForecasts.length ? "scored" : "no_resolved_forecasts",
+    };
+    const statements = [
+      insertRecord(db, { id, owner, recordType: "calibration_review", parentId: null, title, payload: reviewPayload, now }),
+      ...scoredForecasts.map((item) => db.prepare(
+        `INSERT INTO lab_events
+         (id, owner_id, record_id, event_type, event_json, occurred_at, created_at)
+         VALUES (?, ?, ?, 'forecast_resolution', ?, ?, ?)`,
+      ).bind(
+        crypto.randomUUID(),
+        owner,
+        item.forecastId,
+        JSON.stringify({
+          text: `${item.outcome === 1 ? "Occurred" : "Did not occur"}. ${item.resolutionEvidence}`,
+          outcome: item.outcome,
+          originalProbability: item.originalProbability,
+          resolutionEvidence: item.resolutionEvidence,
+          resolutionSource: item.resolutionSource,
+          calibrationReviewId: id,
+          originalPreserved: true,
+        }),
+        now,
+        now,
+      )),
+    ];
+    try {
+      await db.batch(statements);
+    } catch (error) {
+      if (error instanceof Error && error.message.toLowerCase().includes("unique")) {
+        return Response.json({ error: "A selected Forecast already has a preserved resolution." }, { status: 409 });
+      }
+      throw error;
+    }
+    return Response.json({ id, committedAt: now, brierScore, resolvedCount: scoredForecasts.length }, { status: 201 });
+  }
+
   if (operation === "commit_record") {
     const recordType = cleanText(body.recordType, 60);
     const title = cleanText(body.title, 180);
@@ -334,6 +473,9 @@ export async function POST(request: Request) {
     const payload = body.payload;
     if (!title || !isObject(payload)) {
       return Response.json({ error: "A title and structured evidence are required." }, { status: 400 });
+    }
+    if (recordType === "calibration_review") {
+      return Response.json({ error: "Commit Calibration Reviews through the scoring workflow." }, { status: 400 });
     }
     const invalid = validatePayload(recordType, payload);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });

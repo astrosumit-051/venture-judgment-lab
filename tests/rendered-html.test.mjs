@@ -3,12 +3,14 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("builds the complete Venture Judgment Lab learning surface", async () => {
-  const [layout, app, api, brief, practice] = await Promise.all([
+  const [layout, app, api, brief, practice, runtime, calibration] = await Promise.all([
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/LabApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/lab/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/dailyBrief.ts", import.meta.url), "utf8"),
     readFile(new URL("../records/sustainable-weekly-practice-architecture-2026-08-05.md", import.meta.url), "utf8"),
+    readFile(new URL("../db/runtime.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/calibration.ts", import.meta.url), "utf8"),
     access(new URL("../dist/server/index.js", import.meta.url)),
   ]);
 
@@ -19,6 +21,12 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(app, /Weekly Underwrite/);
   assert.match(app, /Decision Delta/);
   assert.match(app, /Second-Order Map/);
+  assert.match(app, /Third-order consequence/);
+  assert.match(app, /Calibration Review/);
+  assert.match(app, /Brier score/);
+  assert.match(app, /Analytical mistakes/);
+  assert.match(app, /Compare investment judgments with later evidence/);
+  assert.match(app, /Open resolution source/);
   assert.match(app, /Open original source/);
   assert.doesNotMatch(app, /Forecast reserved · not yet active/);
   assert.match(brief, /https:\/\/www\.bls\.gov\/news\.release\/jolts\.nr0\.htm/);
@@ -31,6 +39,14 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(api, /commit_daily_brief/);
   assert.match(api, /reading_record/);
   assert.match(api, /forecast_resolution/);
+  assert.match(api, /commit_calibration_review/);
+  assert.match(api, /resolvedForecasts/);
+  assert.match(api, /cannot be resolved negatively until/);
+  assert.match(api, /Commit Calibration Reviews through the scoring workflow/);
+  assert.match(runtime, /CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_events_unique_forecast_resolution/);
+  assert.match(calibration, /calculateBrierScore/);
+  assert.match(calibration, /isCanonicalDate/);
+  assert.match(calibration, /dateInTimeZone/);
   assert.match(api, /INSERT INTO lab_records/);
   assert.match(api, /INSERT INTO lab_events/);
   assert.doesNotMatch(api, /UPDATE lab_records|DELETE FROM lab_records/);
