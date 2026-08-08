@@ -8,6 +8,23 @@ import {
 } from "@/app/calibration";
 import { ensureLabSchema } from "@/db/runtime";
 import { FOUNDER_DIMENSIONS, FOUNDER_SOURCE_TYPES } from "@/app/founderEvidence";
+import {
+  applySourcingCorrections,
+  isConsistentSourcingAttribution,
+  OUTREACH_CHANNELS,
+  RELATIONSHIP_QUALITY_STATES,
+  SOURCING_ATTRIBUTION_CLASSES,
+  SOURCING_CHANNELS,
+  SOURCING_CORRECTION_FIELDS,
+  SOURCING_DISPOSITIONS,
+  SOURCING_OUTCOMES,
+  SOURCING_STAGES,
+  SOURCING_UPDATE_KINDS,
+  SOURCING_VISIBILITIES,
+  sourcingStageIndex,
+  type SourcingEventLike,
+  type SourcingStage,
+} from "@/app/sourcing";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +79,18 @@ const recordRequirements: Record<string, string[]> = {
     "reviewMonth", "sourcingResults", "analyticalMistakes", "judgmentComparison", "laterEvidence",
     "updatedDecisionRule", "findings", "restartPlan",
   ],
+  sourcing_experiment: [
+    "name", "channel", "targetSegment", "searchSurface", "hypothesis", "leadingSignal",
+    "nonConsensusRationale", "startDate", "endDate", "plannedLeads", "successCondition",
+    "stopRule", "timezone",
+  ],
+  sourcing_lead: [
+    "company", "companyUrl", "normalizedCompanyDomain", "attributionClass", "channel",
+    "sourceVisibility", "sourceReference", "discoveredOn", "sector", "companyStage",
+    "observedSignal", "nonConsensusReason", "qualificationThesis", "ventureMechanism",
+    "disqualifier", "initialDisposition", "outreachAngle", "nextAction", "dueDate",
+    "initialStage", "timezone",
+  ],
 };
 
 const allowedEventTypes = new Set([
@@ -108,6 +137,16 @@ function safeHttpUrl(value: unknown): boolean {
     return url.protocol === "https:" || url.protocol === "http:";
   } catch {
     return false;
+  }
+}
+
+function normalizedDomain(value: unknown): string {
+  try {
+    const url = new URL(String(value));
+    if (url.protocol !== "https:" && url.protocol !== "http:") return "";
+    return url.hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return "";
   }
 }
 
@@ -239,6 +278,49 @@ function validatePayload(recordType: string, payload: Record<string, unknown>): 
     }
     if (payload.mode === "Recruiting Surge" && (!hasValue(payload.opportunity) || !hasValue(payload.deadline))) {
       return "Recruiting Surge requires a real opportunity and dated deadline.";
+    }
+  }
+  if (recordType === "sourcing_experiment") {
+    const allowedKeys = new Set(recordRequirements.sourcing_experiment);
+    const boundedText = ["name", "targetSegment", "searchSurface", "hypothesis", "leadingSignal", "nonConsensusRationale", "successCondition", "stopRule"];
+    if (Object.keys(payload).some((key) => !allowedKeys.has(key)) || boundedText.some((key) => cleanText(payload[key], 5000).length !== String(payload[key]).trim().length)) {
+      return "Sourcing Experiments accept only bounded hypothesis and measurement fields.";
+    }
+    if (!(SOURCING_CHANNELS as readonly string[]).includes(cleanText(payload.channel, 100))) return "Choose a valid Sourcing Experiment channel.";
+    if (!isCanonicalDate(payload.startDate) || !isCanonicalDate(payload.endDate) || payload.endDate < payload.startDate) {
+      return "A Sourcing Experiment needs a valid date window with the end on or after the start.";
+    }
+    if (!isValidTimeZone(payload.timezone) || payload.startDate > dateInTimeZone(new Date(), payload.timezone)) {
+      return "A Sourcing Experiment needs a valid timezone and cannot start in the future.";
+    }
+    const plannedLeads = Number(payload.plannedLeads);
+    if (!Number.isInteger(plannedLeads) || plannedLeads < 1 || plannedLeads > 100) return "Plan between 1 and 100 leads for one Sourcing Experiment.";
+  }
+  if (recordType === "sourcing_lead") {
+    const allowedKeys = new Set([...recordRequirements.sourcing_lead, "experimentId", "privateEvidenceConfirmed"]);
+    const boundedText = ["company", "sourceReference", "sector", "observedSignal", "nonConsensusReason", "qualificationThesis", "ventureMechanism", "disqualifier", "outreachAngle", "nextAction"];
+    if (Object.keys(payload).some((key) => !allowedKeys.has(key)) || boundedText.some((key) => typeof payload[key] !== "string" || !payload[key].trim() || payload[key].length > 5000)) {
+      return "Sourcing Leads accept only bounded provenance, qualification, and action fields; raw messages and contact details are rejected.";
+    }
+    if (!safeHttpUrl(payload.companyUrl) || normalizedDomain(payload.companyUrl) !== cleanText(payload.normalizedCompanyDomain, 255)) return "A Sourcing Lead needs a valid, normalized company website.";
+    const attributionClass = cleanText(payload.attributionClass, 100);
+    const channel = cleanText(payload.channel, 100);
+    const sourceVisibility = cleanText(payload.sourceVisibility, 100);
+    if (!(SOURCING_ATTRIBUTION_CLASSES as readonly string[]).includes(attributionClass)) return "Choose the honest Sourcing Attribution Class.";
+    if (!(SOURCING_CHANNELS as readonly string[]).includes(channel)) return "Choose a valid Sourcing Channel.";
+    if (!(SOURCING_VISIBILITIES as readonly string[]).includes(sourceVisibility)) return "Choose a valid sourcing source visibility.";
+    if (!isConsistentSourcingAttribution(attributionClass, channel, sourceVisibility)) {
+      return "The Sourcing Attribution Class, channel, and source visibility contradict one another.";
+    }
+    if (!(SOURCING_DISPOSITIONS as readonly string[]).includes(cleanText(payload.initialDisposition, 100))) return "Choose a valid initial Sourcing Disposition.";
+    if (!new Set(["Pre-seed", "Seed", "Series A", "Unknown"]).has(cleanText(payload.companyStage, 40))) return "Choose a valid early-stage company stage.";
+    if (payload.initialStage !== "discovered") return "Every Sourcing Lead begins at the Discovered stage.";
+    if (!isCanonicalDate(payload.discoveredOn) || !isCanonicalDate(payload.dueDate) || !isValidTimeZone(payload.timezone)) return "A Sourcing Lead needs valid discovery, action, and timezone dates.";
+    if (payload.discoveredOn > dateInTimeZone(new Date(), payload.timezone)) return "A Sourcing Lead cannot be discovered in the future.";
+    if (payload.dueDate < payload.discoveredOn) return "A Sourcing Lead next action cannot be due before discovery.";
+    if (payload.sourceVisibility === "Public source" && !safeHttpUrl(payload.sourceReference)) return "A public Sourcing Lead needs its original source URL.";
+    if (payload.sourceVisibility !== "Public source" && (payload.privateEvidenceConfirmed !== true || String(payload.sourceReference).length > 1000)) {
+      return "Private sourcing context requires confirmation and a concise summary without raw messages or contact details.";
     }
   }
   return null;
@@ -540,16 +622,242 @@ export async function POST(request: Request) {
     return Response.json({ id, committedAt: now, brierScore, resolvedCount: scoredForecasts.length }, { status: 201 });
   }
 
+  if (operation === "advance_sourcing_lead") {
+    const leadId = cleanText(body.leadId, 80);
+    const progress = body.progress;
+    if (!leadId || !isObject(progress)) return Response.json({ error: "Choose a Sourcing Lead and complete its funnel evidence." }, { status: 400 });
+    const allowedKeys = new Set([
+      "leadId", "updateKind", "occurredOn", "nextStage", "outreachChannel", "observedEvidence",
+      "relationshipQuality", "outcome", "nextAction", "dueDate", "privateEvidenceConfirmed", "timezone",
+      "alternateDiscoveryChannel", "correctionField", "correctionReason", "correctedValue",
+    ]);
+    if (
+      JSON.stringify(progress).length > 20_000
+      || Object.keys(progress).some((key) => !allowedKeys.has(key))
+      || cleanText(progress.leadId, 80) !== leadId
+    ) {
+      return Response.json({ error: "Sourcing updates reject raw messages, contact details, ratings, and undeclared fields." }, { status: 400 });
+    }
+    const updateKind = cleanText(progress.updateKind, 80);
+    const nextStage = cleanText(progress.nextStage, 80) as SourcingStage;
+    const observedEvidence = cleanText(progress.observedEvidence, 5000);
+    const nextAction = cleanText(progress.nextAction, 1000);
+    const correctionReason = cleanText(progress.correctionReason, 2000);
+    const timezone = cleanText(progress.timezone, 80);
+    if (
+      !(SOURCING_UPDATE_KINDS as readonly string[]).includes(updateKind)
+      || sourcingStageIndex(nextStage) < 0
+      || !observedEvidence
+      || String(progress.observedEvidence).trim().length !== observedEvidence.length
+      || !nextAction
+      || String(progress.nextAction).trim().length !== nextAction.length
+      || String(progress.correctionReason ?? "").trim().length !== correctionReason.length
+      || !isCanonicalDate(progress.occurredOn)
+      || !isCanonicalDate(progress.dueDate)
+      || !isValidTimeZone(timezone)
+      || progress.occurredOn > dateInTimeZone(new Date(), timezone)
+      || progress.dueDate < progress.occurredOn
+      || progress.privateEvidenceConfirmed !== true
+    ) {
+      return Response.json({ error: "Complete a dated, privacy-confirmed Sourcing progress update with bounded behavioral evidence." }, { status: 400 });
+    }
+    const lead = await db
+      .prepare("SELECT id, parent_id, payload_json FROM lab_records WHERE id = ? AND owner_id = ? AND record_type = 'sourcing_lead'")
+      .bind(leadId, owner)
+      .first<{ id: string; parent_id: string | null; payload_json: string }>();
+    if (!lead) return Response.json({ error: "The Sourcing Lead was not found." }, { status: 404 });
+    const leadPayload = parseJson(lead.payload_json);
+    const priorEvents = await db
+      .prepare("SELECT event_type, event_json, occurred_at FROM lab_events WHERE owner_id = ? AND record_id = ? AND event_type IN ('sourcing_progress', 'sourcing_rediscovery', 'sourcing_metadata_correction') ORDER BY occurred_at ASC")
+      .bind(owner, leadId)
+      .all<{ event_type: string; event_json: string; occurred_at: string }>();
+    let currentStage: SourcingStage = "discovered";
+    const priorSourcingEvents: SourcingEventLike[] = (priorEvents.results ?? []).map((event, index) => ({
+      id: `prior-${index}`,
+      recordId: leadId,
+      eventType: event.event_type,
+      eventData: parseJson(event.event_json),
+      occurredAt: event.occurred_at,
+    }));
+    const effectiveLeadPayload = applySourcingCorrections(leadPayload, priorSourcingEvents);
+    const earliestSourcingEvidenceDate = priorSourcingEvents
+      .map((event) => cleanText(event.eventData.occurredOn, 20))
+      .filter(Boolean)
+      .sort()[0] ?? cleanText(progress.occurredOn, 20);
+    let latestEvidenceDate = cleanText(effectiveLeadPayload.discoveredOn, 20);
+    if (progress.occurredOn < latestEvidenceDate) {
+      return Response.json({ error: "Sourcing progress cannot predate the effective discovery date." }, { status: 400 });
+    }
+    for (const event of priorEvents.results ?? []) {
+      const prior = parseJson(event.event_json);
+      if (event.event_type === "sourcing_progress") {
+        const priorStage = cleanText(prior.nextStage, 80) as SourcingStage;
+        if (sourcingStageIndex(priorStage) > sourcingStageIndex(currentStage)) currentStage = priorStage;
+      }
+      const priorDate = cleanText(prior.occurredOn, 20);
+      if (priorDate > latestEvidenceDate) latestEvidenceDate = priorDate;
+    }
+    if (progress.occurredOn < latestEvidenceDate) {
+      return Response.json({ error: "Sourcing progress dates cannot move backward; use a metadata correction for historical errors." }, { status: 400 });
+    }
+    let eventType: "sourcing_progress" | "sourcing_rediscovery" | "sourcing_metadata_correction";
+    const eventData: Record<string, unknown> = {
+      updateKind,
+      occurredOn: cleanText(progress.occurredOn, 20),
+      nextStage,
+      observedEvidence,
+      nextAction,
+      dueDate: cleanText(progress.dueDate, 20),
+      timezone,
+      privateEvidenceConfirmed: true,
+      text: observedEvidence,
+      originalPreserved: true,
+    };
+    if (updateKind === "Funnel progress") {
+      const outreachChannel = cleanText(progress.outreachChannel, 100);
+      const relationshipQuality = cleanText(progress.relationshipQuality, 100);
+      const outcome = cleanText(progress.outcome, 100);
+      const distance = sourcingStageIndex(nextStage) - sourcingStageIndex(currentStage);
+      if (
+        distance < 0
+        || distance > 1
+        || !(OUTREACH_CHANNELS as readonly string[]).includes(outreachChannel)
+        || !(RELATIONSHIP_QUALITY_STATES as readonly string[]).includes(relationshipQuality)
+        || !(SOURCING_OUTCOMES as readonly string[]).includes(outcome)
+      ) {
+        return Response.json({ error: "Sourcing progress cannot skip or reverse funnel stages and must use valid interaction evidence." }, { status: 400 });
+      }
+      const relationshipQualityIndex = (RELATIONSHIP_QUALITY_STATES as readonly string[]).indexOf(relationshipQuality);
+      if (sourcingStageIndex(nextStage) >= sourcingStageIndex("outreach_sent") && outreachChannel === "No outreach yet") {
+        return Response.json({ error: "Outreach-stage progress must name the outreach channel." }, { status: 400 });
+      }
+      if (
+        sourcingStageIndex(nextStage) >= sourcingStageIndex("response_received")
+        && (relationshipQualityIndex < 2 || outcome === "No response")
+      ) {
+        return Response.json({ error: "Response-stage progress requires a responsive exchange and cannot claim no response." }, { status: 400 });
+      }
+      if (
+        nextStage === "relationship_active"
+        && (relationshipQualityIndex < 3 || !new Set(["Active", "Relationship ongoing"]).has(outcome))
+      ) {
+        return Response.json({ error: "An active relationship requires reciprocal evidence and an active or ongoing outcome." }, { status: 400 });
+      }
+      if (outcome === "No response" && nextStage !== "outreach_sent") {
+        return Response.json({ error: "No response is evidence only for the Outreach Sent stage." }, { status: 400 });
+      }
+      eventType = "sourcing_progress";
+      Object.assign(eventData, { outreachChannel, relationshipQuality, outcome });
+    } else if (updateKind === "Rediscovery or channel evidence") {
+      const alternateDiscoveryChannel = cleanText(progress.alternateDiscoveryChannel, 100);
+      if (
+        nextStage !== currentStage
+        || !(SOURCING_CHANNELS as readonly string[]).includes(alternateDiscoveryChannel)
+        || alternateDiscoveryChannel === cleanText(effectiveLeadPayload.channel, 100)
+      ) {
+        return Response.json({ error: "Rediscovery evidence must preserve the funnel stage and add a different valid channel." }, { status: 400 });
+      }
+      eventType = "sourcing_rediscovery";
+      eventData.alternateDiscoveryChannel = alternateDiscoveryChannel;
+    } else {
+      const correctionField = cleanText(progress.correctionField, 100);
+      let correctedValue: string | Record<string, unknown> = "";
+      if (correctionField === "Company name") {
+        correctedValue = cleanText(progress.correctedValue, 180);
+      } else if (correctionField === "Discovery date") {
+        correctedValue = cleanText(progress.correctedValue, 20);
+      } else if (correctionField === "Sector") {
+        correctedValue = cleanText(progress.correctedValue, 200);
+      } else if (correctionField === "Company stage") {
+        correctedValue = cleanText(progress.correctedValue, 40);
+      } else if (correctionField === "Discovery provenance" && isObject(progress.correctedValue)) {
+        const allowedProvenanceKeys = new Set(["attributionClass", "channel", "sourceVisibility", "sourceReference"]);
+        const attributionClass = cleanText(progress.correctedValue.attributionClass, 100);
+        const channel = cleanText(progress.correctedValue.channel, 100);
+        const sourceVisibility = cleanText(progress.correctedValue.sourceVisibility, 100);
+        const sourceReference = cleanText(progress.correctedValue.sourceReference, 1000);
+        if (
+          Object.keys(progress.correctedValue).some((key) => !allowedProvenanceKeys.has(key))
+          || !(SOURCING_ATTRIBUTION_CLASSES as readonly string[]).includes(attributionClass)
+          || !(SOURCING_CHANNELS as readonly string[]).includes(channel)
+          || !(SOURCING_VISIBILITIES as readonly string[]).includes(sourceVisibility)
+          || !isConsistentSourcingAttribution(attributionClass, channel, sourceVisibility)
+          || !sourceReference
+          || String(progress.correctedValue.sourceReference ?? "").trim().length !== sourceReference.length
+          || (sourceVisibility === "Public source" && !safeHttpUrl(sourceReference))
+        ) {
+          return Response.json({ error: "A discovery-provenance correction needs a complete, internally consistent source bundle." }, { status: 400 });
+        }
+        if (lead.parent_id) {
+          const experiment = await db
+            .prepare("SELECT payload_json FROM lab_records WHERE id = ? AND owner_id = ? AND record_type = 'sourcing_experiment'")
+            .bind(lead.parent_id, owner)
+            .first<{ payload_json: string }>();
+          if (!experiment) {
+            return Response.json({ error: "The linked Sourcing Experiment was not found for this provenance correction." }, { status: 409 });
+          }
+          const experimentChannel = cleanText(parseJson(experiment.payload_json).channel, 100);
+          if (channel !== experimentChannel) {
+            return Response.json({ error: "Corrected discovery provenance must preserve the linked Sourcing Experiment channel." }, { status: 400 });
+          }
+        }
+        correctedValue = { attributionClass, channel, sourceVisibility, sourceReference };
+      }
+      if (
+        nextStage !== currentStage
+        || !(SOURCING_CORRECTION_FIELDS as readonly string[]).includes(correctionField)
+        || !correctionReason
+        || !hasValue(correctedValue)
+        || (correctionField !== "Discovery provenance" && (
+          typeof progress.correctedValue !== "string"
+          || progress.correctedValue.trim().length !== (correctedValue as string).length
+        ))
+        || (correctionField === "Discovery date" && (
+          typeof correctedValue !== "string"
+          || !isCanonicalDate(correctedValue)
+          || correctedValue > dateInTimeZone(new Date(), timezone)
+          || correctedValue > progress.occurredOn
+          || correctedValue > earliestSourcingEvidenceDate
+        ))
+        || (correctionField === "Company stage" && (
+          typeof correctedValue !== "string"
+          || !new Set(["Pre-seed", "Seed", "Series A", "Unknown"]).has(correctedValue)
+        ))
+      ) {
+        return Response.json({ error: "A metadata correction must preserve the funnel stage, name the corrected field, provide a valid corrected value, and explain the original error." }, { status: 400 });
+      }
+      eventType = "sourcing_metadata_correction";
+      Object.assign(eventData, { correctionField, correctionReason, correctedValue });
+    }
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await db.prepare(
+      `INSERT INTO lab_events
+       (id, owner_id, record_id, event_type, event_json, occurred_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(id, owner, leadId, eventType, JSON.stringify(eventData), now, now).run();
+    return Response.json({
+      id,
+      occurredAt: now,
+      currentStage: eventType === "sourcing_progress" ? nextStage : currentStage,
+      eventType,
+    }, { status: 201 });
+  }
+
   if (operation === "commit_record") {
     const recordType = cleanText(body.recordType, 60);
     const title = cleanText(body.title, 180);
     const parentId = cleanText(body.parentId, 80) || null;
-    const payload = body.payload;
-    if (!title || !isObject(payload)) {
+    const submittedPayload = body.payload;
+    if (!title || !isObject(submittedPayload)) {
       return Response.json({ error: "A title and structured evidence are required." }, { status: 400 });
     }
+    let payload: Record<string, unknown> = submittedPayload;
     if (recordType === "calibration_review") {
       return Response.json({ error: "Commit Calibration Reviews through the scoring workflow." }, { status: 400 });
+    }
+    if (recordType === "sourcing_lead") {
+      payload = { ...payload, normalizedCompanyDomain: normalizedDomain(payload.companyUrl) };
     }
     const invalid = validatePayload(recordType, payload);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
@@ -562,6 +870,51 @@ export async function POST(request: Request) {
       if (!parent) return Response.json({ error: "The linked record was not found." }, { status: 404 });
       if (new Set(["founder_evidence_review", "weekly_underwrite"]).has(recordType) && parent.record_type !== "snapshot_judgment") {
         return Response.json({ error: "Founder Evidence Reviews and Underwrites must link to a Snapshot Judgment." }, { status: 400 });
+      }
+      if (recordType === "sourcing_lead") {
+        if (parent.record_type !== "sourcing_experiment" || cleanText(payload.experimentId, 80) !== parentId) {
+          return Response.json({ error: "A Sourcing Lead can link only to its declared Sourcing Experiment." }, { status: 400 });
+        }
+        const experimentPayload = parseJson(parent.payload_json);
+        if (cleanText(experimentPayload.channel, 100) !== cleanText(payload.channel, 100)) {
+          return Response.json({ error: "A Sourcing Lead must preserve the linked experiment's discovery channel." }, { status: 400 });
+        }
+      }
+      if (recordType === "snapshot_judgment") {
+        if (parent.record_type !== "sourcing_lead" || cleanText(payload.sourcingLeadId, 80) !== parentId) {
+          return Response.json({ error: "A sourced Snapshot can link only to its declared Sourcing Lead." }, { status: 400 });
+        }
+        const originalLeadPayload = parseJson(parent.payload_json);
+        const progressRows = await db
+          .prepare("SELECT event_type, event_json, occurred_at FROM lab_events WHERE owner_id = ? AND record_id = ? AND event_type IN ('sourcing_progress', 'sourcing_metadata_correction')")
+          .bind(owner, parentId)
+          .all<{ event_type: string; event_json: string; occurred_at: string }>();
+        let sourceStage: SourcingStage = "discovered";
+        const sourceEvents: SourcingEventLike[] = (progressRows.results ?? []).map((row, index) => {
+          const eventData = parseJson(row.event_json);
+          if (row.event_type === "sourcing_progress") {
+            const candidate = cleanText(eventData.nextStage, 80) as SourcingStage;
+            if (sourcingStageIndex(candidate) > sourcingStageIndex(sourceStage)) sourceStage = candidate;
+          }
+          return {
+            id: `source-${index}`,
+            recordId: parentId,
+            eventType: row.event_type,
+            eventData,
+            occurredAt: row.occurred_at,
+          };
+        });
+        const leadPayload = applySourcingCorrections(originalLeadPayload, sourceEvents);
+        if (sourcingStageIndex(sourceStage) < sourcingStageIndex("qualified")) {
+          return Response.json({ error: "A Sourcing Lead must reach Qualified through preserved funnel evidence before it can parent a Snapshot." }, { status: 400 });
+        }
+        if (cleanText(leadPayload.company, 180).toLowerCase() !== cleanText(payload.company, 180).toLowerCase()) {
+          return Response.json({ error: "The Snapshot company must match its linked Sourcing Lead." }, { status: 400 });
+        }
+        const expectedDiscoverySource = `${cleanText(leadPayload.attributionClass, 100)} · ${cleanText(leadPayload.channel, 100)}`;
+        if (cleanText(payload.discoverySource, 240) !== expectedDiscoverySource) {
+          return Response.json({ error: "The Snapshot must preserve its Sourcing Lead attribution and channel." }, { status: 400 });
+        }
       }
       if (recordType === "founder_evidence_review") {
         const founderCompany = cleanText(payload.company, 180).toLowerCase();
@@ -577,6 +930,12 @@ export async function POST(request: Request) {
     if (recordType === "weekly_underwrite" && cleanText(payload.snapshotId, 80) !== (parentId ?? "")) {
       return Response.json({ error: "The Weekly Underwrite Snapshot link is inconsistent." }, { status: 400 });
     }
+    if (recordType === "sourcing_lead" && cleanText(payload.experimentId, 80) !== (parentId ?? "")) {
+      return Response.json({ error: "The Sourcing Experiment link is inconsistent." }, { status: 400 });
+    }
+    if (recordType === "snapshot_judgment" && cleanText(payload.sourcingLeadId, 80) !== (parentId ?? "")) {
+      return Response.json({ error: "The Snapshot Sourcing Lead link is inconsistent." }, { status: 400 });
+    }
     if (recordType === "weekly_underwrite" && hasValue(payload.founderReviewId)) {
       const founderReviewId = cleanText(payload.founderReviewId, 80);
       const founderReview = await db
@@ -588,10 +947,32 @@ export async function POST(request: Request) {
         return Response.json({ error: "The Founder Evidence Review belongs to a different company Snapshot." }, { status: 400 });
       }
     }
+    if (recordType === "weekly_plan" && hasValue(payload.sourcingExperimentId)) {
+      const experiment = await db
+        .prepare("SELECT id FROM lab_records WHERE id = ? AND owner_id = ? AND record_type = 'sourcing_experiment'")
+        .bind(cleanText(payload.sourcingExperimentId, 80), owner)
+        .first<{ id: string }>();
+      if (!experiment) return Response.json({ error: "The active Sourcing Experiment was not found in your private record." }, { status: 404 });
+    }
+    if (recordType === "sourcing_lead") {
+      const duplicate = await db.prepare(
+        `SELECT id FROM lab_records
+         WHERE owner_id = ? AND record_type = 'sourcing_lead'
+         AND json_extract(payload_json, '$.normalizedCompanyDomain') = ? LIMIT 1`,
+      ).bind(owner, cleanText(payload.normalizedCompanyDomain, 255)).first<{ id: string }>();
+      if (duplicate) return Response.json({ error: "This company already has a Sourcing Lead; append new channel or relationship evidence instead." }, { status: 409 });
+    }
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    await insertRecord(db, { id, owner, recordType, parentId, title, payload, now }).run();
+    try {
+      await insertRecord(db, { id, owner, recordType, parentId, title, payload, now }).run();
+    } catch (error) {
+      if (recordType === "sourcing_lead" && error instanceof Error && error.message.toLowerCase().includes("unique")) {
+        return Response.json({ error: "This company already has a Sourcing Lead; append new channel or relationship evidence instead." }, { status: 409 });
+      }
+      throw error;
+    }
     return Response.json({ id, committedAt: now }, { status: 201 });
   }
 
@@ -607,6 +988,9 @@ export async function POST(request: Request) {
       .bind(recordId, owner)
       .first<{ id: string; record_type: string }>();
     if (!parent) return Response.json({ error: "The record was not found." }, { status: 404 });
+    if (parent.record_type === "sourcing_lead") {
+      return Response.json({ error: "Append Sourcing Lead evidence through the staged sourcing workflow so funnel integrity is preserved." }, { status: 400 });
+    }
     if (parent.record_type === "founder_evidence_review") {
       const allowedFounderEventKeys = new Set(["text", "originalPreserved", "privateEvidenceConfirmed"]);
       if (

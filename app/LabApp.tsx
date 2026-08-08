@@ -10,8 +10,10 @@ import {
   type FounderDimensionObservation,
   type FounderSourceType,
 } from "./founderEvidence";
+import { SourcingView } from "./SourcingView";
+import { applySourcingCorrections, currentSourcingStage, sourcingStageIndex } from "./sourcing";
 
-type View = "today" | "brief" | "snapshot" | "forecast" | "map" | "founder" | "underwrite" | "calibrate" | "plan" | "history";
+type View = "today" | "brief" | "source" | "snapshot" | "forecast" | "map" | "founder" | "underwrite" | "calibrate" | "plan" | "history";
 
 type LabRecord = {
   id: string;
@@ -52,6 +54,7 @@ type ResolutionDraft = {
 const navItems: Array<{ id: View; key: string; label: string; hint: string }> = [
   { id: "today", key: "T", label: "Today", hint: "The next judgment" },
   { id: "brief", key: "B", label: "Brief", hint: "Four real readings" },
+  { id: "source", key: "D", label: "Source", hint: "Find before consensus" },
   { id: "snapshot", key: "S", label: "Snapshot", hint: "Lock the first pass" },
   { id: "forecast", key: "F", label: "Forecast", hint: "Put odds on it" },
   { id: "map", key: "M", label: "2nd Order", hint: "Trace consequences" },
@@ -92,6 +95,7 @@ const practiceModes = {
 type PracticeMode = keyof typeof practiceModes;
 
 const emptySnapshot = {
+  sourcingLeadId: "",
   company: "",
   stage: "Pre-seed",
   sector: "",
@@ -225,6 +229,8 @@ function recordLabel(type: string): string {
     forecast: "Forecast",
     second_order_map: "Second-Order Map",
     founder_evidence_review: "Founder Evidence Review",
+    sourcing_experiment: "Sourcing Experiment",
+    sourcing_lead: "Sourcing Lead",
     weekly_underwrite: "Weekly Underwrite",
     weekly_plan: "Practice Plan",
     calibration_review: "Calibration Review",
@@ -251,6 +257,8 @@ function recordSummary(record: LabRecord): string {
   if (record.recordType === "forecast") return `${numberValue(record.payload, "probability")}% — ${textValue(record.payload, "claim")}`;
   if (record.recordType === "second_order_map") return textValue(record.payload, "firstOrder");
   if (record.recordType === "founder_evidence_review") return textValue(record.payload, "provisionalJudgment");
+  if (record.recordType === "sourcing_experiment") return textValue(record.payload, "hypothesis");
+  if (record.recordType === "sourcing_lead") return textValue(record.payload, "qualificationThesis");
   if (record.recordType === "weekly_underwrite") return textValue(record.payload, "decisionDelta");
   if (record.recordType === "weekly_plan") return textValue(record.payload, "rationale");
   if (record.recordType === "calibration_review") return textValue(record.payload, "findings");
@@ -306,6 +314,22 @@ function keyEvidence(record: LabRecord): Array<[string, string]> {
       return definition ? [[definition.label, `${direction}: ${observation} Inference: ${inference}`] as [string, string]] : [];
     }) : []),
   ];
+  if (record.recordType === "sourcing_experiment") return [
+    ["Channel", textValue(p, "channel")],
+    ["Target segment", textValue(p, "targetSegment")],
+    ["Leading signal", textValue(p, "leadingSignal")],
+    ["Success condition", textValue(p, "successCondition")],
+    ["Stop or change rule", textValue(p, "stopRule")],
+  ];
+  if (record.recordType === "sourcing_lead") return [
+    ["Attribution", textValue(p, "attributionClass")],
+    ["Discovery channel", textValue(p, "channel")],
+    ["Observed signal", textValue(p, "observedSignal")],
+    ["Early or overlooked because", textValue(p, "nonConsensusReason")],
+    ["Fast qualification thesis", textValue(p, "qualificationThesis")],
+    ["Fast disqualifier or gap", textValue(p, "disqualifier")],
+    ["Original next action", `${textValue(p, "nextAction")} · ${textValue(p, "dueDate")}`],
+  ];
   return [];
 }
 
@@ -339,6 +363,7 @@ export function LabApp({ displayName }: { displayName: string }) {
     opportunity: "",
     deadline: "",
     substitutions: "None.",
+    sourcingExperimentId: "",
   });
   const [updateRecord, setUpdateRecord] = useState("");
   const [updateType, setUpdateType] = useState("reflection");
@@ -353,6 +378,25 @@ export function LabApp({ displayName }: { displayName: string }) {
   const founderReviews = useMemo(
     () => data.records.filter((record) => record.recordType === "founder_evidence_review"),
     [data.records],
+  );
+  const sourcingLeads = useMemo(
+    () => data.records
+      .filter((record) => record.recordType === "sourcing_lead")
+      .map((record) => ({
+        ...record,
+        payload: applySourcingCorrections(record.payload, data.events.filter((event) => event.recordId === record.id)),
+      })),
+    [data.events, data.records],
+  );
+  const sourcingExperiments = useMemo(
+    () => data.records.filter((record) => record.recordType === "sourcing_experiment"),
+    [data.records],
+  );
+  const qualifiedSourcingLeads = useMemo(
+    () => sourcingLeads.filter((lead) => (
+      sourcingStageIndex(currentSourcingStage(lead, data.events)) >= sourcingStageIndex("qualified")
+    )),
+    [data.events, sourcingLeads],
   );
   const eligibleFounderReviews = useMemo(
     () => founderReviews.filter((record) => record.parentId === underwrite.snapshotId),
@@ -468,9 +512,11 @@ export function LabApp({ displayName }: { displayName: string }) {
 
   async function commitSnapshot(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const sourceLead = qualifiedSourcingLeads.find((record) => record.id === snapshot.sourcingLeadId);
     const saved = await post({
       operation: "commit_record",
       recordType: "snapshot_judgment",
+      parentId: sourceLead?.id ?? null,
       title: `${snapshot.company} — ${snapshot.disposition} at ${snapshot.confidence}%`,
       payload: { ...snapshot, timezone: dailyBrief.timezone, timeboxMinutes: 20 },
     });
@@ -667,6 +713,7 @@ export function LabApp({ displayName }: { displayName: string }) {
   const modeDefinition = practiceModes[activeMode] ?? practiceModes["Normal Week"];
   const progress = {
     briefs: topLevelRecords.filter((record) => record.recordType === "daily_brief").length,
+    sourcingLeads: sourcingLeads.length,
     snapshots: snapshots.length,
     forecasts: topLevelRecords.filter((record) => record.recordType === "forecast").length,
     underwrites: topLevelRecords.filter((record) => record.recordType === "weekly_underwrite").length,
@@ -747,6 +794,7 @@ export function LabApp({ displayName }: { displayName: string }) {
 
             <div className="progress-strip" aria-label="Evidence repetitions">
               <div><strong>{progress.briefs}</strong><span>Briefs</span></div>
+              <div><strong>{progress.sourcingLeads}</strong><span>Sourcing leads</span></div>
               <div><strong>{progress.snapshots}</strong><span>Snapshots</span></div>
               <div><strong>{progress.forecasts}</strong><span>Forecasts</span></div>
               <div><strong>{progress.underwrites}</strong><span>Underwrites</span></div>
@@ -791,11 +839,22 @@ export function LabApp({ displayName }: { displayName: string }) {
           </section>
         )}
 
+        {view === "source" && (
+          <SourcingView
+            records={data.records}
+            events={data.events}
+            timezone={dailyBrief.timezone}
+            busy={busy}
+            post={post}
+            announce={setNotice}
+          />
+        )}
+
         {view === "snapshot" && (
           <section className="view form-view">
             <div className="intro-row"><div><span className="eyebrow coral">Independent First Pass · 20-minute cap</span><h2>Commit before you know everything.</h2></div><p>A valid Snapshot makes the causal view, evidence, uncertainty, and confidence visible. It does not pretend to be complete.</p></div>
             <form className="judgment-form" onSubmit={commitSnapshot}>
-              <fieldset><legend><span>01</span> Identify the opportunity</legend><div className="field-grid three"><label>Company<input required value={snapshot.company} onChange={(e) => setSnapshot({ ...snapshot, company: e.target.value })} placeholder="Company name" /></label><label>Stage<select value={snapshot.stage} onChange={(e) => setSnapshot({ ...snapshot, stage: e.target.value })}><option>Pre-seed</option><option>Seed</option><option>Series A</option><option>Unknown</option></select></label><label>Sector<input required value={snapshot.sector} onChange={(e) => setSnapshot({ ...snapshot, sector: e.target.value })} placeholder="Specific domain" /></label></div><label>How did you find it?<input required value={snapshot.discoverySource} onChange={(e) => setSnapshot({ ...snapshot, discoverySource: e.target.value })} placeholder="Reading, founder, database, event, or independent search" /></label></fieldset>
+              <fieldset><legend><span>01</span> Identify the opportunity</legend><label>Link a qualified Sourcing Lead <small>Optional for companies found outside the sourcing workbench. Only leads with preserved qualification evidence appear here.</small><select value={snapshot.sourcingLeadId} onChange={(e) => { const sourceLead = qualifiedSourcingLeads.find((record) => record.id === e.target.value); setSnapshot({ ...snapshot, sourcingLeadId: e.target.value, company: sourceLead ? textValue(sourceLead.payload, "company") : snapshot.company, stage: sourceLead ? textValue(sourceLead.payload, "companyStage") : snapshot.stage, sector: sourceLead ? textValue(sourceLead.payload, "sector") : snapshot.sector, discoverySource: sourceLead ? `${textValue(sourceLead.payload, "attributionClass")} · ${textValue(sourceLead.payload, "channel")}` : snapshot.discoverySource }); }}><option value="">No linked Sourcing Lead</option>{qualifiedSourcingLeads.map((record) => <option key={record.id} value={record.id}>{record.title}</option>)}</select></label><div className="field-grid three"><label>Company {snapshot.sourcingLeadId && <small>Locked to the selected lead.</small>}<input required readOnly={Boolean(snapshot.sourcingLeadId)} value={snapshot.company} onChange={(e) => setSnapshot({ ...snapshot, company: e.target.value })} placeholder="Company name" /></label><label>Stage<select value={snapshot.stage} onChange={(e) => setSnapshot({ ...snapshot, stage: e.target.value })}><option>Pre-seed</option><option>Seed</option><option>Series A</option><option>Unknown</option></select></label><label>Sector<input required value={snapshot.sector} onChange={(e) => setSnapshot({ ...snapshot, sector: e.target.value })} placeholder="Specific domain" /></label></div><label>How did you find it?<input required readOnly={Boolean(snapshot.sourcingLeadId)} value={snapshot.discoverySource} onChange={(e) => setSnapshot({ ...snapshot, discoverySource: e.target.value })} placeholder="Reading, founder, database, event, or independent search" /></label></fieldset>
               <fieldset><legend><span>02</span> State the causal view</legend><label>One-sentence investment thesis<textarea required rows={3} value={snapshot.thesis} onChange={(e) => setSnapshot({ ...snapshot, thesis: e.target.value })} placeholder="This company could matter because…" /></label><label>Venture-scale mechanism<textarea required rows={3} value={snapshot.ventureMechanism} onChange={(e) => setSnapshot({ ...snapshot, ventureMechanism: e.target.value })} placeholder="Explain the mechanism, not the market adjective." /></label></fieldset>
               <fieldset><legend><span>03</span> Commit the judgment</legend><div className="field-grid two"><label>Practice Disposition<select value={snapshot.disposition} onChange={(e) => setSnapshot({ ...snapshot, disposition: e.target.value })}><option>Pursue</option><option>Watch</option><option>Pass</option></select><small>Watch requires a trigger. Pass states what must change.</small></label><label>Confidence <strong>{snapshot.confidence}%</strong><input className="range" type="range" min="1" max="99" value={snapshot.confidence} onChange={(e) => setSnapshot({ ...snapshot, confidence: Number(e.target.value) })} /></label></div><label>The crux<textarea required rows={2} value={snapshot.crux} onChange={(e) => setSnapshot({ ...snapshot, crux: e.target.value })} placeholder="The single claim on which your view most depends." /></label></fieldset>
               <fieldset><legend><span>04</span> Expose the evidence gap</legend><label>Strongest supporting evidence<textarea required rows={2} value={snapshot.supportingEvidence} onChange={(e) => setSnapshot({ ...snapshot, supportingEvidence: e.target.value })} placeholder="Observation—not a marketing conclusion." /></label><label>Supporting source URL<input required type="url" value={snapshot.supportingSourceUrl} onChange={(e) => setSnapshot({ ...snapshot, supportingSourceUrl: e.target.value })} placeholder="https://" /></label><label>Strongest disconfirming signal<textarea required rows={2} value={snapshot.disconfirmingSignal} onChange={(e) => setSnapshot({ ...snapshot, disconfirmingSignal: e.target.value })} placeholder="If none was found in the timebox, say so explicitly." /></label><label>Disconfirming source URL <small>Optional only when no material signal was found.</small><input type="url" value={snapshot.disconfirmingSourceUrl} onChange={(e) => setSnapshot({ ...snapshot, disconfirmingSourceUrl: e.target.value })} placeholder="https://" /></label><div className="field-grid two"><label>Top unknown<textarea required rows={3} value={snapshot.topUnknown} onChange={(e) => setSnapshot({ ...snapshot, topUnknown: e.target.value })} /></label><label>Next evidence that would change the view<textarea required rows={3} value={snapshot.nextEvidence} onChange={(e) => setSnapshot({ ...snapshot, nextEvidence: e.target.value })} /></label></div></fieldset>
@@ -877,7 +936,7 @@ export function LabApp({ displayName }: { displayName: string }) {
             <div className="intro-row"><div><span className="eyebrow coral">Sustainable practice architecture</span><h2>Change the mix, never inflate the week.</h2></div><p>Exam Mode wins when conditions overlap. Displaced work is recorded and never becomes catch-up debt.</p></div>
             <div className="mode-grid">{(Object.keys(practiceModes) as PracticeMode[]).map((modeName) => { const mode = practiceModes[modeName]; return <button type="button" key={modeName} onClick={() => setPlan({ ...plan, mode: modeName, rationale: modeName === "Normal Week" ? "Default sustainable practice week." : "Record the condition that activates this mode." })} className={plan.mode === modeName ? "mode-card selected" : "mode-card"}><span>{mode.totalMinutes} min</span><h3>{modeName}</h3><p>{mode.promise}</p><strong>{mode.dailyLoops} independent loop{mode.dailyLoops === 1 ? "" : "s"}</strong></button>; })}</div>
             <form className="judgment-form narrow" onSubmit={commitPlan}>
-              <fieldset><legend><span>01</span> Record this week’s operating mode</legend><div className="field-grid two"><label>Week of<input required type="date" value={plan.weekOf} onChange={(e) => setPlan({ ...plan, weekOf: e.target.value })} /></label><label>Selected mode<select value={plan.mode} onChange={(e) => setPlan({ ...plan, mode: e.target.value as PracticeMode })}>{Object.keys(practiceModes).map((mode) => <option key={mode}>{mode}</option>)}</select></label></div><label>Why this mode applies<textarea required rows={3} value={plan.rationale} onChange={(e) => setPlan({ ...plan, rationale: e.target.value })} /></label><div className="field-grid two"><label>Dated recruiting opportunity <small>Required only for Recruiting Surge.</small><input value={plan.opportunity} onChange={(e) => setPlan({ ...plan, opportunity: e.target.value })} /></label><label>Deadline<input type="date" value={plan.deadline} onChange={(e) => setPlan({ ...plan, deadline: e.target.value })} /></label></div><label>Substitutions or deferred work<textarea required rows={3} value={plan.substitutions} onChange={(e) => setPlan({ ...plan, substitutions: e.target.value })} placeholder="Name what is displaced and why. Write None when nothing is displaced." /></label></fieldset>
+              <fieldset><legend><span>01</span> Record this week’s operating mode</legend><div className="field-grid two"><label>Week of<input required type="date" value={plan.weekOf} onChange={(e) => setPlan({ ...plan, weekOf: e.target.value })} /></label><label>Selected mode<select value={plan.mode} onChange={(e) => setPlan({ ...plan, mode: e.target.value as PracticeMode })}>{Object.keys(practiceModes).map((mode) => <option key={mode}>{mode}</option>)}</select></label></div><label>Active Sourcing Experiment <small>Optional. Its discovery work uses the existing Daily Loop and recruiting allocations—never extra hours.</small><select value={plan.sourcingExperimentId} onChange={(e) => setPlan({ ...plan, sourcingExperimentId: e.target.value })}><option value="">No active experiment this week</option>{sourcingExperiments.map((record) => <option key={record.id} value={record.id}>{record.title}</option>)}</select></label><label>Why this mode applies<textarea required rows={3} value={plan.rationale} onChange={(e) => setPlan({ ...plan, rationale: e.target.value })} /></label><div className="field-grid two"><label>Dated recruiting opportunity <small>Required only for Recruiting Surge.</small><input value={plan.opportunity} onChange={(e) => setPlan({ ...plan, opportunity: e.target.value })} /></label><label>Deadline<input type="date" value={plan.deadline} onChange={(e) => setPlan({ ...plan, deadline: e.target.value })} /></label></div><label>Substitutions or deferred work<textarea required rows={3} value={plan.substitutions} onChange={(e) => setPlan({ ...plan, substitutions: e.target.value })} placeholder="Name what is displaced and why. Write None when nothing is displaced." /></label></fieldset>
               <div className="allocation-card"><div><span className="eyebrow">Verified arithmetic</span><h3>{practiceModes[plan.mode].totalMinutes / 60} hours · {practiceModes[plan.mode].dailyLoops} loops</h3></div><ul>{practiceModes[plan.mode].allocation.map((item) => <li key={item}>{item}</li>)}</ul></div>
               <CommitBar busy={busy} label="Commit Weekly Mode" busyLabel="Preserving…" />
             </form>
@@ -887,7 +946,7 @@ export function LabApp({ displayName }: { displayName: string }) {
         {view === "history" && (
           <section className="view">
             <div className="intro-row"><div><span className="eyebrow coral">Private Learning Record</span><h2>Originals stay. Updates accumulate.</h2></div><p>Resolve Forecasts, record corrections, and add hindsight here. Nothing below edits the evidence you committed earlier.</p></div>
-            <div className="history-tools"><label>Show<select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value)}><option value="all">All records</option><option value="daily_brief">Daily Briefs</option><option value="snapshot_judgment">Snapshots</option><option value="forecast">Forecasts</option><option value="second_order_map">Second-Order Maps</option><option value="founder_evidence_review">Founder Evidence Reviews</option><option value="weekly_underwrite">Underwrites</option><option value="calibration_review">Calibration Reviews</option><option value="weekly_plan">Practice plans</option></select></label><span>{filteredRecords.length} immutable submission{filteredRecords.length === 1 ? "" : "s"}</span></div>
+            <div className="history-tools"><label>Show<select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value)}><option value="all">All records</option><option value="daily_brief">Daily Briefs</option><option value="sourcing_experiment">Sourcing Experiments</option><option value="sourcing_lead">Sourcing Leads</option><option value="snapshot_judgment">Snapshots</option><option value="forecast">Forecasts</option><option value="second_order_map">Second-Order Maps</option><option value="founder_evidence_review">Founder Evidence Reviews</option><option value="weekly_underwrite">Underwrites</option><option value="calibration_review">Calibration Reviews</option><option value="weekly_plan">Practice plans</option></select></label><span>{filteredRecords.length} immutable submission{filteredRecords.length === 1 ? "" : "s"}</span></div>
             <div className="history-layout">
               <div className="timeline">
                 {loading && <div className="empty-history"><p>Opening your private record…</p></div>}
@@ -899,7 +958,7 @@ export function LabApp({ displayName }: { displayName: string }) {
                   return <article className="timeline-record" key={record.id}><span className="timeline-dot" /><div className="record-head"><span>{recordLabel(record.recordType)}</span><time>{formatTime(record.committedAt)}</time></div><h3>{record.title}</h3><p>{recordSummary(record)}</p>{founderSource.startsWith("http") && <a className="history-source-link" href={founderSource} target="_blank" rel="noreferrer">Open Founder Evidence source ↗</a>}{childReadings.length > 0 && <div className="reading-archive">{childReadings.map((reading) => <a key={reading.id} href={textValue(reading.payload, "canonicalUrl")} target="_blank" rel="noreferrer"><span>{textValue(reading.payload, "lane")}</span><strong>{reading.title}</strong><small>{textValue(reading.payload, "learnerResponse")}</small></a>)}</div>}{keyEvidence(record).length > 0 && <details className="evidence-details"><summary>Inspect committed evidence</summary>{keyEvidence(record).map(([label, value]) => <div key={label}><strong>{label}</strong><p>{value}</p></div>)}</details>}{events.map((event) => { const resolutionSource = textValue(event.eventData, "resolutionSource"); const reviewId = textValue(event.eventData, "calibrationReviewId"); const linkedReview = reviewId ? data.records.find((item) => item.id === reviewId) : undefined; return <div className="event" key={event.id}><span>{eventLabel(event.eventType)}</span><time>{formatTime(event.occurredAt)}</time><p>{textValue(event.eventData, "text")}</p>{(resolutionSource || linkedReview) && <div className="event-links">{resolutionSource && <a href={resolutionSource} target="_blank" rel="noreferrer">Open resolution source ↗</a>}{linkedReview && <span>Recorded in {linkedReview.title}</span>}</div>}</div>; })}</article>;
                 })}
               </div>
-              <aside className="append-card"><span className="eyebrow coral">Append, never overwrite</span><h3>Add later evidence</h3><p>Use this for reflection, correction, source status, coaching, or later usefulness. Resolve Forecasts only through a Calibration Review so outcome evidence and scoring remain complete.</p><form onSubmit={appendUpdate}><label>Original record<select required value={updateRecord} onChange={(e) => { setUpdateRecord(e.target.value); setUpdatePrivateEvidenceConfirmed(false); }}><option value="">Choose a record…</option>{data.records.map((record) => <option key={record.id} value={record.id}>{recordLabel(record.recordType)} · {record.title}</option>)}</select></label><label>Update type<select value={updateType} onChange={(e) => setUpdateType(e.target.value)}><option value="reflection">Reflection</option><option value="coach_feedback">Coach feedback</option><option value="later_usefulness">Later usefulness</option><option value="source_status">Source status</option><option value="metadata_correction">Metadata correction</option><option value="missed_practice">Missed practice</option></select></label><label>Dated update<textarea required rows={5} value={updateText} onChange={(e) => setUpdateText(e.target.value)} placeholder="State the new evidence, source, outcome, or correction. Do not restate history as if you knew it earlier." /></label>{selectedUpdateRecord?.recordType === "founder_evidence_review" && <label className="privacy-confirmation"><input required type="checkbox" checked={updatePrivateEvidenceConfirmed} onChange={(e) => setUpdatePrivateEvidenceConfirmed(e.target.checked)} />I confirm this update contains only consented behavioral evidence and omits raw transcripts, ratings, and confidential details.</label>}<button className="primary" disabled={busy}>{busy ? "Appending…" : "Append update"}</button></form></aside>
+              <aside className="append-card"><span className="eyebrow coral">Append, never overwrite</span><h3>Add later evidence</h3><p>Use this for reflection, correction, source status, coaching, or later usefulness. Resolve Forecasts through Calibration and advance Sourcing Leads through the staged sourcing workflow.</p><form onSubmit={appendUpdate}><label>Original record<select required value={updateRecord} onChange={(e) => { setUpdateRecord(e.target.value); setUpdatePrivateEvidenceConfirmed(false); }}><option value="">Choose a record…</option>{data.records.filter((record) => record.recordType !== "sourcing_lead").map((record) => <option key={record.id} value={record.id}>{recordLabel(record.recordType)} · {record.title}</option>)}</select></label><label>Update type<select value={updateType} onChange={(e) => setUpdateType(e.target.value)}><option value="reflection">Reflection</option><option value="coach_feedback">Coach feedback</option><option value="later_usefulness">Later usefulness</option><option value="source_status">Source status</option><option value="metadata_correction">Metadata correction</option><option value="missed_practice">Missed practice</option></select></label><label>Dated update<textarea required rows={5} value={updateText} onChange={(e) => setUpdateText(e.target.value)} placeholder="State the new evidence, source, outcome, or correction. Do not restate history as if you knew it earlier." /></label>{selectedUpdateRecord?.recordType === "founder_evidence_review" && <label className="privacy-confirmation"><input required type="checkbox" checked={updatePrivateEvidenceConfirmed} onChange={(e) => setUpdatePrivateEvidenceConfirmed(e.target.checked)} />I confirm this update contains only consented behavioral evidence and omits raw transcripts, ratings, and confidential details.</label>}<button className="primary" disabled={busy}>{busy ? "Appending…" : "Append update"}</button></form></aside>
             </div>
           </section>
         )}

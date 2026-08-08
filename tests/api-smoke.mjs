@@ -75,28 +75,307 @@ const brief = await post({
 });
 assert.equal(brief.readingIds.length, 4);
 
-const snapshotPayload = {
-    company: "Verification Co",
-    stage: "Seed",
-    sector: "Testing",
-    discoverySource: "Daily Brief",
-    thesis: "Verification Co matters if the evidence-preservation loop works end to end.",
-    ventureMechanism: "Repeated judgment records compound into a defensible learning advantage.",
-    disposition: "Watch",
-    confidence: 58,
-    crux: "The persisted data survives a second read.",
-    supportingEvidence: "The API accepted an atomic four-reading brief.",
-    supportingSourceUrl: "https://example.com/support",
-    disconfirmingSignal: "The interaction has not yet been reloaded.",
-    topUnknown: "Whether linked records remain queryable.",
-    nextEvidence: "Reload the owner-scoped history.",
+const experimentPayload = {
+  name: "Technical pilot signal test",
+  channel: "Technical ecosystem",
+  targetSegment: "Seed-stage industrial software companies with public pilot evidence.",
+  searchSurface: "Technical partner directories and public integration announcements.",
+  hypothesis: "Public implementation evidence will surface credible industrial software companies before broad funding coverage.",
+  leadingSignal: "A named customer pilot with a technically specific implementation claim.",
+  nonConsensusRationale: "Implementation evidence may appear before investor or press attention.",
+  startDate: "2026-08-05",
+  endDate: "2026-08-08",
+  plannedLeads: 5,
+  successCondition: "At least one independently discovered company earns a linked Snapshot.",
+  stopRule: "Change the search surface if five reviewed signals produce no qualified company.",
+  timezone: "America/Chicago",
 };
+
+await post({
+  operation: "commit_record",
+  recordType: "sourcing_experiment",
+  title: "Invalid Sourcing Experiment",
+  payload: { ...experimentPayload, endDate: "2026-08-04" },
+}, 400);
+
+const sourcingExperiment = await post({
+  operation: "commit_record",
+  recordType: "sourcing_experiment",
+  title: "Sourcing Experiment — Technical pilot signal test",
+  payload: experimentPayload,
+});
+
+const sourcingLeadPayload = {
+  experimentId: sourcingExperiment.id,
+  company: "Verification Co",
+  companyUrl: "https://verification.example.com",
+  attributionClass: "Independent discovery",
+  channel: "Technical ecosystem",
+  sourceVisibility: "Public source",
+  sourceReference: "https://example.com/verification-pilot",
+  discoveredOn: "2026-08-05",
+  sector: "Testing infrastructure",
+  companyStage: "Seed",
+  observedSignal: "A named pilot exposed an observable implementation claim.",
+  nonConsensusReason: "The technical signal preceded broad financing coverage.",
+  qualificationThesis: "Verification Co may compound through embedded workflow data if the pilot converts.",
+  ventureMechanism: "Repeated integrations could create distribution and switching-cost advantages.",
+  disqualifier: "No evidence yet that the pilot converts into repeatable deployments.",
+  initialDisposition: "Advance to Snapshot",
+  outreachAngle: "Ask how the pilot changed the deployment process and what repeated afterward.",
+  nextAction: "Complete a 20-minute Snapshot.",
+  dueDate: "2026-08-08",
+  privateEvidenceConfirmed: false,
+  initialStage: "discovered",
+  timezone: "America/Chicago",
+};
+
+await post({
+  operation: "commit_record",
+  recordType: "sourcing_lead",
+  parentId: sourcingExperiment.id,
+  title: "Invalid Sourcing Lead",
+  payload: { ...sourcingLeadPayload, attributionClass: "Independent-ish" },
+}, 400);
+
+await post({
+  operation: "commit_record",
+  recordType: "sourcing_lead",
+  parentId: sourcingExperiment.id,
+  title: "Unconfirmed private Sourcing Lead",
+  payload: {
+    ...sourcingLeadPayload,
+    sourceVisibility: "Private relationship",
+    sourceReference: "Private relationship context.",
+    privateEvidenceConfirmed: false,
+  },
+}, 400);
+
+await post({
+  operation: "commit_record",
+  recordType: "sourcing_lead",
+  parentId: sourcingExperiment.id,
+  title: "Contradictory independent Sourcing Lead",
+  payload: {
+    ...sourcingLeadPayload,
+    channel: "Institutional database",
+    sourceVisibility: "Licensed database",
+    sourceReference: "Licensed database record without private content.",
+    privateEvidenceConfirmed: true,
+  },
+}, 400);
+
+await post({
+  operation: "commit_record",
+  recordType: "sourcing_lead",
+  parentId: sourcingExperiment.id,
+  title: "Contradictory database Sourcing Lead",
+  payload: {
+    ...sourcingLeadPayload,
+    attributionClass: "Database screening",
+  },
+}, 400);
+
+const sourcingLead = await post({
+  operation: "commit_record",
+  recordType: "sourcing_lead",
+  parentId: sourcingExperiment.id,
+  title: "Verification Co — Sourcing Lead",
+  payload: sourcingLeadPayload,
+});
+
+await post({
+  operation: "commit_record",
+  recordType: "sourcing_lead",
+  parentId: sourcingExperiment.id,
+  title: "Duplicate Verification Co — Sourcing Lead",
+  payload: { ...sourcingLeadPayload, companyUrl: "https://www.verification.example.com/another-page" },
+}, 409);
+
+const snapshotPayload = {
+  sourcingLeadId: sourcingLead.id,
+  company: "Verification Co",
+  stage: "Seed",
+  sector: "Testing",
+  discoverySource: "Independent discovery · Technical ecosystem",
+  thesis: "Verification Co matters if the evidence-preservation loop works end to end.",
+  ventureMechanism: "Repeated judgment records compound into a defensible learning advantage.",
+  disposition: "Watch",
+  confidence: 58,
+  crux: "The persisted data survives a second read.",
+  supportingEvidence: "The API accepted an atomic four-reading brief.",
+  supportingSourceUrl: "https://example.com/support",
+  disconfirmingSignal: "The interaction has not yet been reloaded.",
+  topUnknown: "Whether linked records remain queryable.",
+  nextEvidence: "Reload the owner-scoped history.",
+};
+
+await post({
+  operation: "commit_record",
+  recordType: "snapshot_judgment",
+  parentId: sourcingLead.id,
+  title: "Premature sourced Snapshot",
+  payload: snapshotPayload,
+}, 400);
+
+const sourcingProgress = {
+  leadId: sourcingLead.id,
+  updateKind: "Funnel progress",
+  occurredOn: "2026-08-06",
+  nextStage: "qualified",
+  outreachChannel: "No outreach yet",
+  observedEvidence: "The 20-minute qualification preserved one causal mechanism and one disqualifier.",
+  relationshipQuality: "No direct interaction",
+  outcome: "Active",
+  nextAction: "Send one evidence-specific founder note.",
+  dueDate: "2026-08-08",
+  privateEvidenceConfirmed: true,
+  timezone: "America/Chicago",
+};
+
+await post({ operation: "advance_sourcing_lead", leadId: sourcingLead.id, progress: sourcingProgress });
+
+await post({
+  operation: "advance_sourcing_lead",
+  leadId: sourcingLead.id,
+  progress: { ...sourcingProgress, nextStage: "founder_meeting" },
+}, 400);
+
+await post({
+  operation: "advance_sourcing_lead",
+  leadId: sourcingLead.id,
+  progress: { ...sourcingProgress, nextStage: "outreach_sent", outreachChannel: "Email", rawMessage: "This must not be stored." },
+}, 400);
+
+await post({
+  operation: "advance_sourcing_lead",
+  leadId: sourcingLead.id,
+  progress: {
+    ...sourcingProgress,
+    occurredOn: "2026-08-07",
+    nextStage: "outreach_sent",
+    outreachChannel: "Email",
+    observedEvidence: "A concise evidence-specific note was sent; no raw message or contact detail was preserved.",
+    outcome: "Nurture",
+    nextAction: "Wait for a response until the committed follow-up date.",
+  },
+});
+
+await post({
+  operation: "advance_sourcing_lead",
+  leadId: sourcingLead.id,
+  progress: {
+    ...sourcingProgress,
+    updateKind: "Metadata correction",
+    occurredOn: "2026-08-08",
+    nextStage: "outreach_sent",
+    correctionField: "Discovery provenance",
+    correctionReason: "This correction intentionally conflicts with the linked experiment channel.",
+    correctedValue: {
+      attributionClass: "Database screening",
+      channel: "Institutional database",
+      sourceVisibility: "Licensed database",
+      sourceReference: "Licensed database context without private company material.",
+    },
+    observedEvidence: "An internally consistent correction must still remain consistent with its linked experiment.",
+    nextAction: "Reject the correction and preserve the experiment association.",
+  },
+}, 400);
+
+await post({
+  operation: "advance_sourcing_lead",
+  leadId: sourcingLead.id,
+  progress: {
+    ...sourcingProgress,
+    updateKind: "Metadata correction",
+    occurredOn: "2026-08-08",
+    nextStage: "outreach_sent",
+    correctionField: "Discovery provenance",
+    correctionReason: "The public operator post was a direct referral, not an independently selected search result.",
+    correctedValue: {
+      attributionClass: "Referral or inbound",
+      channel: "Technical ecosystem",
+      sourceVisibility: "Public source",
+      sourceReference: "https://example.com/verification-referral",
+    },
+    observedEvidence: "The dated source explicitly sent the company to the learner, correcting the original independent attribution.",
+    nextAction: "Use referral attribution in all downstream cohort and conversion evidence.",
+  },
+});
+
+await post({
+  operation: "advance_sourcing_lead",
+  leadId: sourcingLead.id,
+  progress: {
+    ...sourcingProgress,
+    occurredOn: "2026-08-08",
+    nextStage: "response_received",
+    outreachChannel: "Email",
+    relationshipQuality: "One-way contact",
+    outcome: "No response",
+    observedEvidence: "No response has been observed, so a response stage cannot be claimed.",
+  },
+}, 400);
+
+await post({
+  operation: "advance_sourcing_lead",
+  leadId: sourcingLead.id,
+  progress: {
+    ...sourcingProgress,
+    updateKind: "Rediscovery or channel evidence",
+    occurredOn: "2026-08-08",
+    nextStage: "outreach_sent",
+    alternateDiscoveryChannel: "Founder or operator network",
+    observedEvidence: "A later operator referral independently surfaced the same company.",
+    nextAction: "Preserve whether the referral produces a responsive exchange.",
+  },
+});
+
+await post({
+  operation: "advance_sourcing_lead",
+  leadId: sourcingLead.id,
+  progress: {
+    ...sourcingProgress,
+    updateKind: "Metadata correction",
+    occurredOn: "2026-08-08",
+    nextStage: "outreach_sent",
+    correctionField: "Company name",
+    correctionReason: "The original record used a shortened working name rather than the company's current public name.",
+    correctedValue: "Verification Systems",
+    observedEvidence: "The company website now presents the public name Verification Systems; the original record remains preserved.",
+    nextAction: "Use the corrected company name in downstream analysis and retain the original metadata.",
+  },
+});
+
+await post({
+  operation: "append_event",
+  recordId: sourcingLead.id,
+  eventType: "reflection",
+  eventData: { text: "This generic path must not bypass staged sourcing progress.", originalPreserved: true },
+}, 400);
+
+await post({
+  operation: "commit_record",
+  recordType: "snapshot_judgment",
+  parentId: sourcingLead.id,
+  title: "Snapshot with stale original company name",
+  payload: snapshotPayload,
+}, 400);
+
+await post({
+  operation: "commit_record",
+  recordType: "snapshot_judgment",
+  parentId: sourcingLead.id,
+  title: "Invalid sourced Snapshot",
+  payload: { ...snapshotPayload, company: "Verification Systems", discoverySource: "Independent discovery · Technical ecosystem" },
+}, 400);
 
 const snapshot = await post({
   operation: "commit_record",
   recordType: "snapshot_judgment",
-  title: "Verification Co — Watch at 58%",
-  payload: snapshotPayload,
+  parentId: sourcingLead.id,
+  title: "Verification Systems — Watch at 58%",
+  payload: { ...snapshotPayload, company: "Verification Systems", discoverySource: "Referral or inbound · Technical ecosystem" },
 });
 
 const founderDimensions = ["insight", "speed", "integrity", "recruiting", "adaptability", "founder_market_fit"];
@@ -158,7 +437,7 @@ await post({
 
 const validFounderPayload = {
     linkedSnapshotId: snapshot.id,
-    company: "Verification Co",
+    company: "Verification Systems",
     founderName: "Synthetic Founder",
     sourceType: "Public interview",
     sourceUrlOrContext: "https://example.com/founder-interview",
@@ -243,7 +522,9 @@ const otherSnapshot = await post({
   title: "Other Verification Co — Watch at 58%",
   payload: {
     ...snapshotPayload,
+    sourcingLeadId: "",
     company: "Other Verification Co",
+    discoverySource: "Synthetic standalone verification",
     thesis: "This second Snapshot verifies that Founder Evidence cannot cross identity boundaries.",
   },
 });
@@ -340,6 +621,7 @@ await post({
     weekOf: "2026-08-03",
     mode: "Normal Week",
     rationale: "Verify accepted arithmetic.",
+    sourcingExperimentId: sourcingExperiment.id,
     totalMinutes: 690,
     dailyLoops: 5,
   },
@@ -474,12 +756,20 @@ await post({
 });
 
 const final = await fetch(`${baseUrl}/api/lab`, { headers }).then((response) => response.json());
-assert.equal(final.records.length, 15);
-assert.equal(final.events.length, 3);
+assert.equal(final.records.length, 17);
+assert.equal(final.events.length, 8);
+const lockedSourcingLead = final.records.find((record) => record.id === sourcingLead.id);
+assert.equal(lockedSourcingLead.payload.normalizedCompanyDomain, "verification.example.com");
+assert.equal(lockedSourcingLead.payload.company, "Verification Co");
+assert.equal(final.events.filter((event) => event.recordId === sourcingLead.id && event.eventType === "sourcing_progress").length, 2);
+assert.equal(final.events.filter((event) => event.recordId === sourcingLead.id && event.eventType === "sourcing_rediscovery").length, 1);
+assert.equal(final.events.filter((event) => event.recordId === sourcingLead.id && event.eventType === "sourcing_metadata_correction").length, 2);
+assert.equal(final.events.find((event) => event.recordId === sourcingLead.id && event.eventType === "sourcing_metadata_correction").eventData.correctedValue, "Verification Systems");
+assert.equal(final.records.find((record) => record.id === snapshot.id).parentId, sourcingLead.id);
 const lockedForecast = final.records.find((record) => record.id === forecast.id);
 assert.equal(lockedForecast.payload.probability, 61);
 assert.equal(final.events.filter((event) => event.recordId === forecast.id).length, 2);
 const calibration = final.records.find((record) => record.recordType === "calibration_review");
 assert.equal(calibration.payload.brierScore, 0.1521);
 
-console.log("API smoke passed: 15 immutable records, 3 append-only events, Founder Evidence trust boundaries, calibration scoring, horizon-boundary checks, and owner isolation intact.");
+console.log("API smoke passed: 17 immutable records, 8 append-only events, typed correction overlays, sourcing attribution and funnel boundaries, Founder Evidence safeguards, calibration scoring, and owner isolation intact.");

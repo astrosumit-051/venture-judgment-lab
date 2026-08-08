@@ -72,6 +72,26 @@ _Avoid_: News dump, popular-link roundup
 The immutable assignment metadata and dated append-only events for every Daily Brief selection, including source identity and status, teaching purpose, learner response, corrections, replacements, linked artifacts, and later usefulness. Sites presents the archive while the Private Learning Record preserves its canonical history without rewriting the original record.
 _Avoid_: Bookmarks, mutable recommendations list
 
+**Sourcing Experiment**:
+A bounded, falsifiable test of one company-discovery hypothesis, committing the target, search surface, leading signal, channel, success condition, and stop-or-change rule before its funnel is known.
+_Avoid_: Browsing session, company list, trend hunt
+
+**Sourcing Attribution Class**:
+The immutable description of how the learner actually encountered a company: Independent Discovery, Database Screening, Assigned Search, Referral or Inbound, or Existing Relationship. Later original insight does not rewrite the source of discovery.
+_Avoid_: Sourced by me, shared credit, retroactive ownership
+
+**Sourcing Lead**:
+The immutable first record of one company discovery, preserving company identity, original attribution and signal, fast qualification, disqualifying evidence or gap, outreach angle, and next action before later funnel outcomes are known.
+_Avoid_: CRM contact, company score, duplicated rediscovery
+
+**Sourcing Progress**:
+A dated append-only account of observable funnel and relationship evidence for a Sourcing Lead. It can advance from discovery through qualification, outreach, response, meeting, and active relationship without rewriting or skipping the earlier stages. A typed metadata correction preserves the original value while becoming the effective value used by current display, cohort reporting, and downstream identity checks.
+_Avoid_: Mutable pipeline status, activity count, raw message archive
+
+**Relationship Quality State**:
+An evidence-backed description of a sourcing relationship as no direct interaction, one-way contact, responsive exchange, reciprocal learning, or trusted relationship. It is not a score and can be revised only through later dated evidence.
+_Avoid_: Network strength score, prestige proxy, meeting count
+
 **Weekly Underwrite**:
 An end-to-end, question-led analysis of one early-stage company that investigates three Load-Bearing Questions, integrates traceable supporting and disconfirming evidence, and appends a deeper Practice Disposition and Decision Delta without rewriting the original Snapshot Judgment.
 _Avoid_: Weekend book report, checklist review

@@ -19,6 +19,9 @@ export const labRecords = sqliteTable(
       table.committedAt,
     ),
     index("idx_lab_records_owner_type").on(table.ownerId, table.recordType),
+    uniqueIndex("idx_lab_records_unique_sourcing_domain")
+      .on(table.ownerId, sql`json_extract(${table.payloadJson}, '$.normalizedCompanyDomain')`)
+      .where(sql`${table.recordType} = 'sourcing_lead'`),
   ],
 );
 

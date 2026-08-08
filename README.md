@@ -7,6 +7,7 @@ workspace remain the durable source of truth.
 ## Working learning system
 
 - **Daily Brief:** open four verified original sources, respond independently, and preserve one immutable Reading Record per source.
+- **Sourcing mastery:** test one bounded discovery hypothesis, preserve exact company attribution and first signals, advance funnel stages only through dated evidence, and compare channels by linked Snapshots and Underwrites.
 - **Snapshot Judgment:** commit a causal view, linked evidence, uncertainty, disposition, and confidence before deeper research.
 - **Forecast:** lock a falsifiable claim, probability, resolution date, disconfirming condition, and resolution source.
 - **Second-Order Map:** trace explicit first-, second-, and third-order consequences before stress-testing stakeholders, regulation, adjacent effects, and disconfirmation.

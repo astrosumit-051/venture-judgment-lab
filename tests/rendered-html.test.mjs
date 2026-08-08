@@ -3,7 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("builds the complete Venture Judgment Lab learning surface", async () => {
-  const [layout, app, api, brief, practice, runtime, calibration, founder] = await Promise.all([
+  const [layout, app, api, brief, practice, runtime, calibration, founder, sourcing, sourcingView] = await Promise.all([
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/LabApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/lab/route.ts", import.meta.url), "utf8"),
@@ -12,6 +12,8 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
     readFile(new URL("../db/runtime.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/calibration.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/founderEvidence.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/sourcing.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/SourcingView.tsx", import.meta.url), "utf8"),
     access(new URL("../dist/server/index.js", import.meta.url)),
   ]);
 
@@ -27,6 +29,7 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(app, /Brier score/);
   assert.match(app, /Analytical mistakes/);
   assert.match(app, /Founder Evidence Review/);
+  assert.match(app, /SourcingView/);
   assert.match(app, /Observable behavior, not founder vibes/);
   assert.match(app, /only consented behavioral evidence/);
   assert.match(app, /Confirm that the Founder Evidence update contains only consented behavioral evidence/);
@@ -37,6 +40,19 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(founder, /Recruiting ability/);
   assert.match(founder, /Speed/);
   assert.match(founder, /Founder-market fit/);
+  assert.match(sourcing, /Independent discovery/);
+  assert.match(sourcing, /Database screening/);
+  assert.match(sourcing, /Licensed database/);
+  assert.match(sourcing, /Relationship active/);
+  assert.match(sourcing, /SOURCING_UPDATE_KINDS/);
+  assert.match(sourcing, /applySourcingCorrections/);
+  assert.match(sourcing, /Discovery provenance/);
+  assert.match(sourcing, /computeSourcingMetrics/);
+  assert.match(sourcingView, /Sourcing Experiment/);
+  assert.match(sourcingView, /Sourcing Lead/);
+  assert.match(sourcingView, /Funnel progress/);
+  assert.match(sourcingView, /Judge the hypothesis by its own funnel/);
+  assert.match(sourcingView, /raw messages/);
   assert.match(app, /Compare investment judgments with later evidence/);
   assert.match(app, /Open resolution source/);
   assert.match(app, /Open original source/);
@@ -53,6 +69,15 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(api, /forecast_resolution/);
   assert.match(api, /commit_calibration_review/);
   assert.match(api, /founder_evidence_review/);
+  assert.match(api, /sourcing_experiment/);
+  assert.match(api, /sourcing_lead/);
+  assert.match(api, /advance_sourcing_lead/);
+  assert.match(api, /Sourcing progress cannot skip or reverse funnel stages/);
+  assert.match(api, /must reach Qualified through preserved funnel evidence/);
+  assert.match(api, /correctedValue/);
+  assert.match(api, /applySourcingCorrections/);
+  assert.match(api, /Sourcing Attribution Class, channel, and source visibility contradict/);
+  assert.match(api, /Sourcing updates reject raw messages/);
   assert.match(api, /Founder Evidence Review must cover all six behavior dimensions/);
   assert.match(api, /Private Founder Evidence requires confirmation/);
   assert.match(api, /Founder Evidence contains an undeclared field/);
@@ -62,6 +87,7 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(api, /cannot be resolved negatively until/);
   assert.match(api, /Commit Calibration Reviews through the scoring workflow/);
   assert.match(runtime, /CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_events_unique_forecast_resolution/);
+  assert.match(runtime, /idx_lab_records_unique_sourcing_domain/);
   assert.match(calibration, /calculateBrierScore/);
   assert.match(calibration, /isCanonicalDate/);
   assert.match(calibration, /dateInTimeZone/);
