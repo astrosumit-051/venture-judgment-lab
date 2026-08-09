@@ -2,23 +2,14 @@ import { verifyAutomationBearer } from "@/app/automationAuth";
 import { dateInTimeZone } from "@/app/calibration";
 import {
   boundedCoachSource,
-  evaluateMasteryEvidence,
+  COACH_ERROR_KINDS,
   validateCoachPayload,
   type CoachDimension,
-  type MasteryAttempt,
 } from "@/app/coach";
+import { evaluateOwnerMastery, masteryEvidencePayload } from "@/app/coachPersistence";
 import { ensureLabSchema } from "@/db/runtime";
 
 export const dynamic = "force-dynamic";
-
-type DbRecord = {
-  id: string;
-  record_type: string;
-  parent_id: string | null;
-  title: string;
-  payload_json: string;
-  committed_at: string;
-};
 
 function parseJson(value: string): Record<string, unknown> {
   try {
@@ -72,21 +63,11 @@ async function registeredOwner(db: D1Database, request: Request): Promise<string
   return registration?.owner_id ?? null;
 }
 
-async function coachRows(db: D1Database, owner: string): Promise<DbRecord[]> {
-  const result = await db.prepare(
-    `SELECT id, record_type, parent_id, title, payload_json, committed_at
-     FROM lab_records WHERE owner_id = ?
-     AND record_type IN ('coach_request', 'coach_feedback', 'revision_attempt', 'mastery_evidence')
-     ORDER BY committed_at ASC`,
-  ).bind(owner).all<DbRecord>();
-  return result.results ?? [];
-}
-
 export async function GET(request: Request) {
   const db = await ensureLabSchema();
   const owner = await registeredOwner(db, request);
   if (!owner) return Response.json({ error: "Valid registered automation authorization is required." }, { status: 401 });
-  const queue = await db.prepare(
+  const [queue, feedbackHistory] = await Promise.all([db.prepare(
     `SELECT request.id, request.parent_id, request.title, request.payload_json, request.committed_at,
             source.record_type AS source_type, source.title AS source_title, source.payload_json AS source_payload_json,
             source.committed_at AS source_committed_at
@@ -108,8 +89,29 @@ export async function GET(request: Request) {
     source_title: string;
     source_payload_json: string;
     source_committed_at: string;
-  }>();
+  }>(), db.prepare(
+    `SELECT payload_json, committed_at FROM lab_records WHERE owner_id = ? AND record_type = 'coach_feedback'
+     ORDER BY committed_at ASC`,
+  ).bind(owner).all<{ payload_json: string; committed_at: string }>()]);
+  const recurringByPattern = new Map<string, { dimension: string; kind: string; count: number; latestDiagnosis: string; latestAt: string }>();
+  for (const row of feedbackHistory.results ?? []) {
+    const payload = parseJson(row.payload_json);
+    const dimension = text(payload.dimension, 80);
+    const kind = text(payload.recurringErrorKind, 100);
+    if (!dimension || !kind) continue;
+    const key = `${dimension}|${kind}`;
+    const prior = recurringByPattern.get(key);
+    recurringByPattern.set(key, {
+      dimension,
+      kind,
+      count: (prior?.count ?? 0) + 1,
+      latestDiagnosis: text(payload.recurringError, 5000),
+      latestAt: row.committed_at,
+    });
+  }
   return Response.json({
+    errorKinds: COACH_ERROR_KINDS,
+    recurringPatterns: [...recurringByPattern.values()],
     queue: (queue.results ?? []).map((row) => {
       const requestPayload = parseJson(row.payload_json);
       return {
@@ -161,7 +163,7 @@ export async function POST(request: Request) {
   const requestPayload = parseJson(requestRow.payload_json);
   const submitted = body.feedback;
   const submittedKeys = new Set([
-    "unsupportedInference", "evidenceGap", "recurringError", "requiredRevision", "nextDifficultyAdjustment",
+    "unsupportedInference", "evidenceGap", "recurringError", "recurringErrorKind", "requiredRevision", "nextDifficultyAdjustment",
     "competingInterpretation", "benchmark", "foundationalError", "genuineDisconfirmingCase",
     "disconfirmingCaseEvidence", "privacyConfirmed",
   ]);
@@ -170,12 +172,12 @@ export async function POST(request: Request) {
   }
   const dimension = text(requestPayload.dimension, 80) as CoachDimension;
   const recurringError = text(submitted.recurringError, 5000);
-  const recurringErrorKey = recurringError.toLocaleLowerCase("en-US").replace(/\s+/g, " ");
+  const recurringErrorKind = text(submitted.recurringErrorKind, 100);
   const priorSameError = await db.prepare(
     `SELECT count(*) AS count FROM lab_records WHERE owner_id = ? AND record_type = 'coach_feedback'
      AND json_extract(payload_json, '$.dimension') = ?
-     AND json_extract(payload_json, '$.recurringErrorKey') = ?`,
-  ).bind(owner, dimension, recurringErrorKey).first<{ count: number }>();
+     AND json_extract(payload_json, '$.recurringErrorKind') = ?`,
+  ).bind(owner, dimension, recurringErrorKind).first<{ count: number }>();
   const timezone = text(requestPayload.timezone, 100);
   const respondedOn = dateInTimeZone(new Date(), timezone);
   const feedbackId = crypto.randomUUID();
@@ -190,7 +192,7 @@ export async function POST(request: Request) {
     unsupportedInference: submitted.unsupportedInference,
     evidenceGap: submitted.evidenceGap,
     recurringError,
-    recurringErrorKey,
+    recurringErrorKind,
     recurringErrorCount: Number(priorSameError?.count ?? 0) + 1,
     requiredRevision: submitted.requiredRevision,
     nextDifficultyAdjustment: submitted.nextDifficultyAdjustment,
@@ -204,59 +206,17 @@ export async function POST(request: Request) {
   const feedbackError = validateCoachPayload("coach_feedback", feedbackPayload, respondedOn);
   if (feedbackError) return Response.json({ error: feedbackError }, { status: 400 });
 
-  const rows = await coachRows(db, owner);
-  const requests = new Map(rows.filter((row) => row.record_type === "coach_request").map((row) => [row.id, row]));
-  const revisions = new Map(rows.filter((row) => row.record_type === "revision_attempt").map((row) => [row.parent_id, row]));
-  const feedbackRows: DbRecord[] = [
-    ...rows.filter((row) => row.record_type === "coach_feedback"),
-    { id: feedbackId, record_type: "coach_feedback", parent_id: requestId, title: `Coach Feedback — ${dimension}`, payload_json: JSON.stringify(feedbackPayload), committed_at: new Date().toISOString() },
-  ];
-  const attempts: MasteryAttempt[] = feedbackRows.flatMap((feedback) => {
-    const feedbackData = parseJson(feedback.payload_json);
-    if (text(feedbackData.dimension, 80) !== dimension || !feedback.parent_id) return [];
-    const linkedRequest = requests.get(feedback.parent_id) ?? (feedback.parent_id === requestId ? {
-      id: requestId,
-      record_type: "coach_request",
-      parent_id: requestRow.parent_id,
-      title: requestRow.title,
-      payload_json: requestRow.payload_json,
-      committed_at: requestRow.committed_at,
-    } : undefined);
-    if (!linkedRequest) return [];
-    const linkedRequestData = parseJson(linkedRequest.payload_json);
-    const revision = revisions.get(feedback.id);
-    const revisionData = revision ? parseJson(revision.payload_json) : {};
-    return [{
-      requestId: linkedRequest.id,
-      sourceRecordId: text(linkedRequestData.sourceRecordId, 80),
-      companyIdentity: text(linkedRequestData.companyIdentity, 180),
-      feedbackId: feedback.id,
-      committedAt: feedback.committed_at,
-      independentFirstPassConfirmed: linkedRequestData.independentFirstPassConfirmed === true,
-      foundationalError: feedbackData.foundationalError === true,
-      genuineDisconfirmingCase: feedbackData.genuineDisconfirmingCase === true,
-      revisionAttemptId: revision?.id ?? "",
-      genuineRevisionConfirmed: revisionData.genuineRevisionConfirmed === true,
-    }];
-  });
-  const evaluation = evaluateMasteryEvidence(dimension, attempts);
+  const pendingCommittedAt = new Date().toISOString();
+  const evaluation = await evaluateOwnerMastery(db, owner, dimension, [{
+    id: feedbackId,
+    recordType: "coach_feedback",
+    parentId: requestId,
+    title: `Coach Feedback — ${dimension}`,
+    payload: feedbackPayload,
+    committedAt: pendingCommittedAt,
+  }]);
   const masteryId = crypto.randomUUID();
-  const masteryPayload: Record<string, unknown> = {
-    dimension,
-    evidenceState: evaluation.evidenceState,
-    evaluatedOn: respondedOn,
-    timezone,
-    attemptRequestIds: evaluation.requestIds,
-    sourceRecordIds: evaluation.sourceRecordIds,
-    companyIdentities: evaluation.companyIdentities,
-    latestFeedbackIds: evaluation.latestFeedbackIds,
-    qualifyingRevisionId: evaluation.qualifyingRevisionId,
-    qualifyingDisconfirmingFeedbackId: evaluation.qualifyingDisconfirmingFeedbackId,
-    latestTwoClear: evaluation.latestTwoClear,
-    basis: `${evaluation.attemptCount} independent attempt${evaluation.attemptCount === 1 ? "" : "s"} across ${evaluation.companyCount} compan${evaluation.companyCount === 1 ? "y" : "ies"}; ${evaluation.hasRevisionOrDisconfirmingCase ? "revision or disconfirming evidence present" : "revision or disconfirming evidence still missing"}.`,
-    remainingGaps: evaluation.remainingGaps,
-    recordKey: `${dimension}|${feedbackId}`,
-  };
+  const masteryPayload = masteryEvidencePayload({ evaluation, triggerRecordId: feedbackId, triggerRecordType: "coach_feedback", evaluatedOn: respondedOn, timezone });
   const masteryError = validateCoachPayload("mastery_evidence", masteryPayload, respondedOn);
   if (masteryError) return Response.json({ error: masteryError }, { status: 400 });
   const now = new Date().toISOString();

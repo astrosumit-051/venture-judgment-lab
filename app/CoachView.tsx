@@ -179,7 +179,7 @@ export function CoachView({ records, timezone, busy, post, announce }: CoachView
           {selectedFeedback && <div className="coach-diagnosis">
             <span>Unsupported inference</span><p>{text(selectedFeedback.payload, "unsupportedInference")}</p>
             <span>Evidence gap</span><p>{text(selectedFeedback.payload, "evidenceGap")}</p>
-            <span>Recurring error · observed {String(selectedFeedback.payload.recurringErrorCount)}×</span><p>{text(selectedFeedback.payload, "recurringError")}</p>
+            <span>Recurring error · {text(selectedFeedback.payload, "recurringErrorKind").replaceAll("_", " ")} · observed {String(selectedFeedback.payload.recurringErrorCount)}×</span><p>{text(selectedFeedback.payload, "recurringError")}</p>
             <span>Required revision</span><p>{text(selectedFeedback.payload, "requiredRevision")}</p>
             <span>Competing interpretation</span><p>{text(selectedFeedback.payload, "competingInterpretation")}</p>
             <span>Benchmark</span><p>{text(selectedFeedback.payload, "benchmark")}</p>

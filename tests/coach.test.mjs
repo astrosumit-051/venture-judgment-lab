@@ -58,7 +58,7 @@ test("Coach Feedback is diagnostic, bounded, and never a grade or model answer",
     unsupportedInference: "The analysis infers durable retention from one repeated workflow.",
     evidenceGap: "No independent retention cohort is present.",
     recurringError: "Anecdote-to-generalization jump",
-    recurringErrorKey: "anecdote-to-generalization jump",
+    recurringErrorKind: "anecdote_to_generalization",
     recurringErrorCount: 1,
     requiredRevision: "Separate the observed repetition from the unproven retention mechanism.",
     nextDifficultyAdjustment: COACH_DIFFICULTY_ADJUSTMENTS[2],
@@ -121,6 +121,7 @@ test("Mastery becomes repeated or corroborated only at the exact approved eviden
 
   assert.equal(evaluateMasteryEvidence("diligence", attempts.slice(0, 2)).qualifies, false);
   assert.equal(evaluateMasteryEvidence("diligence", attempts.map((attempt) => ({ ...attempt, companyIdentity: "Alpha" }))).qualifies, false);
+  assert.equal(evaluateMasteryEvidence("diligence", attempts.map((attempt, index) => ({ ...attempt, companyIdentity: index === 1 ? " ALPHA " : "Alpha" }))).qualifies, false);
   assert.equal(evaluateMasteryEvidence("diligence", attempts.map((attempt) => ({ ...attempt, revisionAttemptId: "", genuineRevisionConfirmed: false }))).qualifies, false);
   assert.equal(evaluateMasteryEvidence("diligence", attempts.map((attempt, index) => ({ ...attempt, foundationalError: index === 2 }))).qualifies, false);
 });

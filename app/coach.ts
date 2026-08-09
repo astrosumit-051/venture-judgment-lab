@@ -27,6 +27,20 @@ export const COACH_DIFFICULTY_ADJUSTMENTS = [
   "advance_independently",
 ] as const;
 
+export const COACH_ERROR_KINDS = [
+  "unsupported_causal_bridge",
+  "anecdote_to_generalization",
+  "source_reliability_blind_spot",
+  "missing_disconfirmation",
+  "base_rate_neglect",
+  "identity_or_attribution_error",
+  "calibration_error",
+  "founder_halo_effect",
+  "unclear_decision_delta",
+  "communication_without_evidence",
+  "other_bounded_pattern",
+] as const;
+
 export const MASTERY_EVIDENCE_STATES = [
   "observed_once",
   "developing",
@@ -73,6 +87,10 @@ export type MasteryEvaluation = {
   qualifyingDisconfirmingFeedbackId: string;
   remainingGaps: string[];
 };
+
+export function normalizedCoachCompanyIdentity(value: string): string {
+  return value.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US");
+}
 
 const sourceDimensions: Record<string, readonly CoachDimension[]> = {
   sourcing_lead: ["sourcing"],
@@ -207,18 +225,21 @@ export function validateCoachPayload(recordType: string, payload: Record<string,
   if (recordType === "coach_feedback") {
     const allowed = [
       "requestId", "sourceRecordId", "dimension", "companyIdentity", "respondedOn", "timezone", "feedbackKey",
-      "unsupportedInference", "evidenceGap", "recurringError", "recurringErrorKey", "recurringErrorCount", "requiredRevision", "nextDifficultyAdjustment",
+      "unsupportedInference", "evidenceGap", "recurringError", "recurringErrorKind", "recurringErrorCount", "requiredRevision", "nextDifficultyAdjustment",
       "competingInterpretation", "benchmark", "foundationalError", "genuineDisconfirmingCase",
       "disconfirmingCaseEvidence", "privacyConfirmed",
     ];
     if (!exactKeys(payload, allowed)) return "Coach Feedback contains an undeclared field; grades, scores, and model answers are rejected.";
     if (!boundedRequired(payload, [
       "requestId", "sourceRecordId", "companyIdentity", "feedbackKey", "unsupportedInference", "evidenceGap",
-      "recurringError", "recurringErrorKey", "requiredRevision", "competingInterpretation", "benchmark", "disconfirmingCaseEvidence",
+      "recurringError", "requiredRevision", "competingInterpretation", "benchmark", "disconfirmingCaseEvidence",
     ])) return "Coach Feedback must diagnose the inference, evidence gap, recurring error, revision, and next comparison.";
     if (!validDimension(payload.dimension)) return "Coach Feedback needs one canonical judgment dimension.";
     if (!(COACH_DIFFICULTY_ADJUSTMENTS as readonly unknown[]).includes(payload.nextDifficultyAdjustment)) {
       return "Coach Feedback needs one bounded next difficulty adjustment.";
+    }
+    if (!(COACH_ERROR_KINDS as readonly unknown[]).includes(payload.recurringErrorKind)) {
+      return "Coach Feedback needs one stable recurring-error kind.";
     }
     if (typeof payload.foundationalError !== "boolean" || typeof payload.genuineDisconfirmingCase !== "boolean") {
       return "Coach Feedback must state whether the error is foundational and whether a genuine disconfirming case exists.";
@@ -256,14 +277,17 @@ export function validateCoachPayload(recordType: string, payload: Record<string,
     const allowed = [
       "dimension", "evidenceState", "evaluatedOn", "timezone", "attemptRequestIds", "sourceRecordIds",
       "companyIdentities", "latestFeedbackIds", "qualifyingRevisionId", "qualifyingDisconfirmingFeedbackId",
-      "latestTwoClear", "basis", "remainingGaps", "recordKey",
+      "latestTwoClear", "basis", "remainingGaps", "triggerRecordId", "triggerRecordType", "recordKey",
     ];
     if (!exactKeys(payload, allowed)) return "Mastery Evidence contains an undeclared field; composite scores and grades are rejected.";
     if (!validDimension(payload.dimension) || !(MASTERY_EVIDENCE_STATES as readonly unknown[]).includes(payload.evidenceState)) {
       return "Mastery Evidence needs one dimension and one evidence state.";
     }
     if (!validDateAndTimeZone(payload, "evaluatedOn", today)) return "Mastery Evidence must preserve its actual local date and timezone.";
-    if (!boundedRequired(payload, ["basis", "recordKey"], 20_000)) return "Mastery Evidence needs a factual basis and stable identity.";
+    if (!boundedRequired(payload, ["basis", "triggerRecordId", "triggerRecordType", "recordKey"], 20_000)) return "Mastery Evidence needs a factual basis, trigger, and stable identity.";
+    if (!new Set(["coach_feedback", "revision_attempt"]).has(text(payload.triggerRecordType))) {
+      return "Mastery Evidence must be triggered by Coach Feedback or a Revision Attempt.";
+    }
     if (
       !stringArray(payload.attemptRequestIds, 1, 100)
       || !stringArray(payload.sourceRecordIds, 1, 100)
@@ -287,7 +311,13 @@ export function evaluateMasteryEvidence(dimension: CoachDimension, input: Master
     .filter((attempt) => attempt.independentFirstPassConfirmed)
     .filter((attempt, index, all) => all.findIndex((candidate) => candidate.sourceRecordId === attempt.sourceRecordId) === index)
     .sort((left, right) => left.committedAt.localeCompare(right.committedAt));
-  const companyIdentities = [...new Set(attempts.map((attempt) => attempt.companyIdentity.trim()).filter(Boolean))];
+  const companyByKey = new Map<string, string>();
+  for (const attempt of attempts) {
+    const display = attempt.companyIdentity.trim();
+    const key = normalizedCoachCompanyIdentity(display);
+    if (key && !companyByKey.has(key)) companyByKey.set(key, display);
+  }
+  const companyIdentities = [...companyByKey.values()];
   const latest = attempts.slice(-2);
   const latestTwoClear = latest.length === 2 && latest.every((attempt) => !attempt.foundationalError);
   const revisionAttempt = attempts.find((attempt) => attempt.revisionAttemptId && attempt.genuineRevisionConfirmed);

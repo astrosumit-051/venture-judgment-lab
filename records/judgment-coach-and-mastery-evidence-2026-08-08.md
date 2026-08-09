@@ -33,7 +33,7 @@ must identify:
 
 - the precise unsupported inference;
 - the evidence gap;
-- the recurring error and its prior occurrence count;
+- the recurring error, stable error kind, and prior occurrence count;
 - the required revision;
 - the next difficulty adjustment;
 - a competing interpretation;
@@ -50,6 +50,15 @@ Grades, weighted rubrics, school-style ratings, prestige points, and model
 answers are undeclared data and are rejected rather than merely hidden in the
 interface.
 
+Recurring errors use a bounded taxonomy: unsupported causal bridge,
+anecdote-to-generalization, source-reliability blind spot, missing
+disconfirmation, base-rate neglect, identity or attribution error, calibration
+error, founder halo effect, unclear Decision Delta, communication without
+evidence, or another explicitly bounded pattern. The diagnosis remains
+attempt-specific prose, while the stable kind detects the same failure across
+different wording. The operator queue exposes prior kinds, counts, and latest
+diagnoses so recurrence is a deliberate comparison rather than a string match.
+
 ### Revision Attempt
 
 One Revision Attempt answers one Coach Feedback record. It preserves the
@@ -64,7 +73,9 @@ artifact rather than replacing this chain.
 ### Mastery Evidence
 
 Every appended Coach Feedback produces a new dimension-specific Mastery
-Evidence snapshot. The state is:
+Evidence snapshot. A later Revision Attempt atomically produces another
+snapshot, so a qualifying revision updates the state even when it arrives after
+the third feedback. The state is:
 
 - `observed_once` after one qualifying coached attempt;
 - `developing` after more evidence exists but the full threshold is unmet; or
@@ -77,7 +88,9 @@ The repeated-or-corroborated threshold is exact:
 3. at least one genuine Revision Attempt or coach-confirmed disconfirming case;
 4. no Foundational Error in the latest two attempts.
 
-Duplicate coaching on one source cannot inflate the attempt count. Older clean
+Company identity is Unicode-normalized, whitespace-normalized, and
+case-insensitive for threshold counting, so spelling or capitalization cannot
+turn one company into two. Duplicate coaching on one source cannot inflate the attempt count. Older clean
 attempts cannot conceal a Foundational Error in either of the latest two.
 Mastery Evidence names its attempt, company, latest-feedback, revision or
 disconfirmation basis and every remaining gap. It does not claim permanent
@@ -101,6 +114,12 @@ The automation route never sends correspondence, publishes work, submits an
 application, or changes a learner record. It accepts one bounded feedback
 object and atomically appends feedback plus the resulting Mastery Evidence.
 
+Later corrections, reflections, source status, coaching notes, and hindsight
+may append to any coaching record only as bounded, privacy-confirmed History
+events. Those notes preserve and annotate the original; they do not replace a
+typed record or retroactively rewrite its dated Mastery Evidence. A later typed
+feedback or revision produces the next evidence snapshot.
+
 ## Edge cases
 
 - A convincing result with a missing causal bridge is still a Foundational
@@ -120,10 +139,11 @@ object and atomically appends feedback plus the resulting Mastery Evidence.
 
 The isolated API proof commits three Diligence attempts across two companies,
 queues exactly those bounded sources, rejects pre-revealed answers and grades,
-appends one foundational diagnosis, preserves a genuine Revision Attempt,
-appends two later clean diagnoses with deterministic recurring-error counts,
-and produces `repeated_or_corroborated` only on the third attempt. It also
-proves duplicate, owner, generic-event, and bearer boundaries.
+appends one foundational diagnosis, then two clean diagnoses with taxonomy-backed
+recurring-error counts despite different wording. The state remains developing
+after the third feedback until a genuine Revision Attempt arrives last and
+atomically produces `repeated_or_corroborated`. It also proves bounded
+correction, duplicate, owner, generic-event, and bearer boundaries.
 
 This checkpoint remains local. The completion program permits one private
 deployment for Phase 2 only after the Diligence Case and Judgment Coach gates

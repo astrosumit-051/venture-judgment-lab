@@ -9,7 +9,8 @@ import {
 import { ensureLabSchema } from "@/db/runtime";
 import { FOUNDER_DIMENSIONS, FOUNDER_SOURCE_TYPES } from "@/app/founderEvidence";
 import { configuredAutomationFingerprint } from "@/app/automationAuth";
-import { COACH_RECORD_TYPES, isCoachSource, validateCoachPayload } from "@/app/coach";
+import { COACH_RECORD_TYPES, isCoachSource, validateCoachPayload, type CoachDimension } from "@/app/coach";
+import { evaluateOwnerMastery, masteryEvidencePayload } from "@/app/coachPersistence";
 import {
   DILIGENCE_RECORD_TYPES,
   DILIGENCE_STAGE_DEFINITIONS,
@@ -1416,6 +1417,47 @@ export async function POST(request: Request) {
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
+    if (recordType === "revision_attempt") {
+      const dimension = cleanText(payload.dimension, 80) as CoachDimension;
+      const evaluation = await evaluateOwnerMastery(db, owner, dimension, [{
+        id,
+        recordType: "revision_attempt",
+        parentId: parentId!,
+        title,
+        payload,
+        committedAt: now,
+      }]);
+      const masteryId = crypto.randomUUID();
+      const evaluatedOn = cleanText(payload.attemptedOn, 20);
+      const timezone = cleanText(payload.timezone, 100);
+      const masteryPayload = masteryEvidencePayload({
+        evaluation,
+        triggerRecordId: id,
+        triggerRecordType: "revision_attempt",
+        evaluatedOn,
+        timezone,
+      });
+      const masteryError = validatePayload("mastery_evidence", masteryPayload);
+      if (masteryError) return Response.json({ error: masteryError }, { status: 400 });
+      try {
+        await db.batch([
+          insertRecord(db, { id, owner, recordType, parentId, title, payload, now }),
+          insertRecord(db, { id: masteryId, owner, recordType: "mastery_evidence", parentId: id, title: `Mastery Evidence — ${dimension.replaceAll("_", " ")}`, payload: masteryPayload, now }),
+        ]);
+      } catch (error) {
+        if (error instanceof Error && error.message.toLowerCase().includes("unique")) {
+          return Response.json({ error: "This Coach Feedback already has a preserved Revision Attempt." }, { status: 409 });
+        }
+        throw error;
+      }
+      return Response.json({
+        id,
+        committedAt: now,
+        masteryEvidenceId: masteryId,
+        evidenceState: evaluation.evidenceState,
+        remainingGaps: evaluation.remainingGaps,
+      }, { status: 201 });
+    }
     try {
       await insertRecord(db, { id, owner, recordType, parentId, title, payload, now }).run();
     } catch (error) {
@@ -1458,7 +1500,17 @@ export async function POST(request: Request) {
       return Response.json({ error: "Opportunity Monitor evidence is immutable and can be created only through its bounded registration and run workflows." }, { status: 400 });
     }
     if ((COACH_RECORD_TYPES as readonly string[]).includes(parent.record_type)) {
-      return Response.json({ error: "Judgment Coach evidence advances only through typed requests, feedback, revisions, and mastery records." }, { status: 400 });
+      const allowedCoachEventKeys = new Set(["text", "originalPreserved", "privateEvidenceConfirmed"]);
+      if (
+        Object.keys(eventData).some((key) => !allowedCoachEventKeys.has(key))
+        || typeof eventData.text !== "string"
+        || !eventData.text.trim()
+        || eventData.text.length > 5000
+        || eventData.originalPreserved !== true
+        || eventData.privateEvidenceConfirmed !== true
+      ) {
+        return Response.json({ error: "Judgment Coach corrections and hindsight require a bounded note, preservation marker, and privacy confirmation; they cannot replace typed evidence or alter prior Mastery Evidence." }, { status: 400 });
+      }
     }
     if (parent.record_type === "founder_evidence_review") {
       const allowedFounderEventKeys = new Set(["text", "originalPreserved", "privateEvidenceConfirmed"]);

@@ -28,8 +28,9 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
     readFile(new URL("../records/diligence-development-ladder-2026-08-08.md", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0006_oval_rocket_racer.sql", import.meta.url), "utf8"),
   ]);
-  const [coach, coachView, coachRoute, coachRecord, coachMigration] = await Promise.all([
+  const [coach, coachPersistence, coachView, coachRoute, coachRecord, coachMigration] = await Promise.all([
     readFile(new URL("../app/coach.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/coachPersistence.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/CoachView.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/automation/coach/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../records/judgment-coach-and-mastery-evidence-2026-08-08.md", import.meta.url), "utf8"),
@@ -158,6 +159,8 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(app, /contains only bounded, approved evidence/);
   assert.match(coach, /repeated_or_corroborated/);
   assert.match(coach, /attempts\.length >= 3 && companyIdentities\.length >= 2 && latestTwoClear && hasRevisionOrDisconfirmingCase/);
+  assert.match(coach, /normalizedCoachCompanyIdentity/);
+  assert.match(coach, /COACH_ERROR_KINDS/);
   assert.match(coach, /grades, scores, and model answers are rejected/);
   assert.match(coachView, /Reveal the gap, not a grade or answer/);
   assert.match(coachView, /Queued — interpretations withheld/);
@@ -165,7 +168,11 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(coachRoute, /verifyAutomationBearer/);
   assert.match(coachRoute, /boundedCoachSource/);
   assert.match(coachRoute, /recurringErrorCount/);
+  assert.match(coachRoute, /recurringPatterns/);
   assert.match(coachRoute, /db\.batch/);
+  assert.match(coachPersistence, /evaluateOwnerMastery/);
+  assert.match(coachPersistence, /triggerRecordType/);
+  assert.match(api, /Judgment Coach corrections and hindsight require a bounded note/);
   assert.doesNotMatch(coachRoute, /UPDATE lab_records|DELETE FROM lab_records/);
   assert.match(coachRecord, /at least three distinct committed Independent First Pass attempts/);
   assert.match(coachRecord, /no Foundational Error in the latest two attempts/);
