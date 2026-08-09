@@ -9,6 +9,7 @@ import {
 import { ensureLabSchema } from "@/db/runtime";
 import { FOUNDER_DIMENSIONS, FOUNDER_SOURCE_TYPES } from "@/app/founderEvidence";
 import { configuredAutomationFingerprint } from "@/app/automationAuth";
+import { COACH_RECORD_TYPES, isCoachSource, validateCoachPayload } from "@/app/coach";
 import {
   DILIGENCE_RECORD_TYPES,
   DILIGENCE_STAGE_DEFINITIONS,
@@ -169,7 +170,48 @@ function normalizedDomain(value: unknown): string {
   }
 }
 
+async function coachCompanyIdentity(db: D1Database, owner: string, record: {
+  id: string;
+  record_type: string;
+  parent_id: string | null;
+  title: string;
+  payload_json: string;
+}): Promise<string> {
+  const payload = parseJson(record.payload_json);
+  const direct = cleanText(payload.company, 180) || cleanText(payload.firm, 180);
+  if (direct) return direct;
+  let linkedId = "";
+  let linkedType = "";
+  if (record.record_type === "forecast") {
+    linkedId = cleanText(payload.linkedSnapshotId, 80);
+    linkedType = "snapshot_judgment";
+  } else if (record.record_type === "weekly_underwrite") {
+    linkedId = cleanText(payload.snapshotId, 80);
+    linkedType = "snapshot_judgment";
+  } else if (record.record_type === "diligence_stage") {
+    linkedId = record.parent_id ?? "";
+    linkedType = "diligence_case";
+  } else if (record.record_type === "interview_practice") {
+    linkedId = record.parent_id ?? "";
+    linkedType = "recruiting_opportunity";
+  }
+  if (!linkedId || !linkedType) return "";
+  const linked = await db.prepare(
+    "SELECT payload_json FROM lab_records WHERE id = ? AND owner_id = ? AND record_type = ?",
+  ).bind(linkedId, owner, linkedType).first<{ payload_json: string }>();
+  if (!linked) return "";
+  const linkedPayload = parseJson(linked.payload_json);
+  return cleanText(linkedPayload.company, 180) || cleanText(linkedPayload.firm, 180);
+}
+
 function validatePayload(recordType: string, payload: Record<string, unknown>): string | null {
+  if ((COACH_RECORD_TYPES as readonly string[]).includes(recordType)) {
+    const timezone = cleanText(payload.timezone, 100);
+    const today = isValidTimeZone(timezone)
+      ? dateInTimeZone(new Date(), timezone)
+      : new Date().toISOString().slice(0, 10);
+    return validateCoachPayload(recordType, payload, today);
+  }
   if ((DILIGENCE_RECORD_TYPES as readonly string[]).includes(recordType)) {
     const timezone = cleanText(payload.timezone, 100);
     const today = isValidTimeZone(timezone)
@@ -976,6 +1018,9 @@ export async function POST(request: Request) {
     if (recordType === "calibration_review") {
       return Response.json({ error: "Commit Calibration Reviews through the scoring workflow." }, { status: 400 });
     }
+    if (recordType === "coach_feedback" || recordType === "mastery_evidence") {
+      return Response.json({ error: "Coach Feedback and Mastery Evidence can be appended only through the bearer-protected Judgment Coach operator." }, { status: 400 });
+    }
     if (recordType === "sourcing_lead") {
       payload = {
         ...payload,
@@ -1007,11 +1052,49 @@ export async function POST(request: Request) {
         recordKey: `${parentId ?? ""}|${cleanText(payload.stageKey, 80)}`,
       };
     }
+    if (recordType === "coach_request") {
+      if (!parentId) return Response.json({ error: "A Coach Request must link to committed original work." }, { status: 400 });
+      const source = await db.prepare(
+        "SELECT id, record_type, parent_id, title, payload_json, committed_at FROM lab_records WHERE id = ? AND owner_id = ?",
+      ).bind(parentId, owner).first<{ id: string; record_type: string; parent_id: string | null; title: string; payload_json: string; committed_at: string }>();
+      if (!source) return Response.json({ error: "The committed coaching source was not found." }, { status: 404 });
+      const dimension = cleanText(payload.dimension, 80);
+      if (!isCoachSource(source.record_type, dimension)) {
+        return Response.json({ error: "This committed work does not support the selected coaching dimension." }, { status: 400 });
+      }
+      const companyIdentity = await coachCompanyIdentity(db, owner, source);
+      if (!companyIdentity) return Response.json({ error: "Coaching evidence must preserve a source-linked company identity." }, { status: 400 });
+      payload = {
+        ...payload,
+        sourceRecordId: source.id,
+        sourceRecordType: source.record_type,
+        companyIdentity,
+        requestKey: `${source.id}|${dimension}`,
+      };
+    }
+    if (recordType === "revision_attempt") {
+      if (!parentId) return Response.json({ error: "A Revision Attempt must link to Coach Feedback." }, { status: 400 });
+      const feedback = await db.prepare(
+        "SELECT id, record_type, payload_json FROM lab_records WHERE id = ? AND owner_id = ?",
+      ).bind(parentId, owner).first<{ id: string; record_type: string; payload_json: string }>();
+      if (!feedback) return Response.json({ error: "The linked Coach Feedback was not found." }, { status: 404 });
+      if (feedback.record_type !== "coach_feedback") return Response.json({ error: "A Revision Attempt can link only to Coach Feedback." }, { status: 400 });
+      const feedbackPayload = parseJson(feedback.payload_json);
+      payload = {
+        ...payload,
+        coachFeedbackId: feedback.id,
+        sourceRecordId: cleanText(feedbackPayload.sourceRecordId, 80),
+        dimension: cleanText(feedbackPayload.dimension, 80),
+        companyIdentity: cleanText(feedbackPayload.companyIdentity, 180),
+        revisionKey: feedback.id,
+      };
+    }
     const invalid = validatePayload(recordType, payload);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
 
     const isRecruitingChild = (RECRUITING_CHILD_RECORD_TYPES as readonly string[]).includes(recordType);
     const isDiligenceChild = recordType === "diligence_stage";
+    const isCoachChild = recordType === "coach_request" || recordType === "revision_attempt";
     if (recordType === "recruiting_opportunity" && parentId) {
       return Response.json({ error: "A Recruiting Opportunity is a top-level immutable record." }, { status: 400 });
     }
@@ -1024,6 +1107,9 @@ export async function POST(request: Request) {
     if (isDiligenceChild && !parentId) {
       return Response.json({ error: "A Diligence stage must link to its Diligence Case." }, { status: 400 });
     }
+    if (isCoachChild && !parentId) {
+      return Response.json({ error: "Judgment Coach evidence must link to its immutable parent." }, { status: 400 });
+    }
 
     if (parentId) {
       const parent = await db
@@ -1033,6 +1119,23 @@ export async function POST(request: Request) {
       if (!parent) return Response.json({ error: "The linked record was not found." }, { status: 404 });
       if (new Set(["founder_evidence_review", "weekly_underwrite"]).has(recordType) && parent.record_type !== "snapshot_judgment") {
         return Response.json({ error: "Founder Evidence Reviews and Underwrites must link to a Snapshot Judgment." }, { status: 400 });
+      }
+      if (recordType === "coach_request") {
+        if (
+          cleanText(payload.sourceRecordId, 80) !== parent.id
+          || cleanText(payload.sourceRecordType, 80) !== parent.record_type
+          || !isCoachSource(parent.record_type, payload.dimension)
+        ) return Response.json({ error: "A Coach Request must preserve the exact committed source and coaching dimension." }, { status: 400 });
+      }
+      if (recordType === "revision_attempt") {
+        const feedbackPayload = parseJson(parent.payload_json);
+        if (
+          parent.record_type !== "coach_feedback"
+          || cleanText(payload.coachFeedbackId, 80) !== parent.id
+          || cleanText(payload.sourceRecordId, 80) !== cleanText(feedbackPayload.sourceRecordId, 80)
+          || cleanText(payload.dimension, 80) !== cleanText(feedbackPayload.dimension, 80)
+          || cleanText(payload.companyIdentity, 180) !== cleanText(feedbackPayload.companyIdentity, 180)
+        ) return Response.json({ error: "A Revision Attempt must preserve its Coach Feedback, source, dimension, and company identity." }, { status: 400 });
       }
       if (isRecruitingChild) {
         if (parent.record_type !== "recruiting_opportunity" || cleanText(payload.opportunityId, 80) !== parentId) {
@@ -1263,6 +1366,19 @@ export async function POST(request: Request) {
       ).bind(owner, parentId, cleanText(payload.stageKey, 80)).first<{ id: string }>();
       if (duplicate) return Response.json({ error: "This Diligence stage is already immutable." }, { status: 409 });
     }
+    if (recordType === "coach_request") {
+      const duplicate = await db.prepare(
+        `SELECT id FROM lab_records WHERE owner_id = ? AND record_type = 'coach_request'
+         AND parent_id = ? AND json_extract(payload_json, '$.dimension') = ? LIMIT 1`,
+      ).bind(owner, parentId, cleanText(payload.dimension, 80)).first<{ id: string }>();
+      if (duplicate) return Response.json({ error: "This committed work already has a Coach Request for that dimension." }, { status: 409 });
+    }
+    if (recordType === "revision_attempt") {
+      const duplicate = await db.prepare(
+        "SELECT id FROM lab_records WHERE owner_id = ? AND record_type = 'revision_attempt' AND parent_id = ? LIMIT 1",
+      ).bind(owner, parentId).first<{ id: string }>();
+      if (duplicate) return Response.json({ error: "This Coach Feedback already has a preserved Revision Attempt." }, { status: 409 });
+    }
     if (recordType === "sourcing_lead") {
       const duplicate = await db.prepare(
         `SELECT id FROM lab_records
@@ -1312,6 +1428,9 @@ export async function POST(request: Request) {
       if ((DILIGENCE_RECORD_TYPES as readonly string[]).includes(recordType) && error instanceof Error && error.message.toLowerCase().includes("unique")) {
         return Response.json({ error: "This Diligence Case or stage already exists; preserved evidence cannot be replaced." }, { status: 409 });
       }
+      if ((COACH_RECORD_TYPES as readonly string[]).includes(recordType) && error instanceof Error && error.message.toLowerCase().includes("unique")) {
+        return Response.json({ error: "This Judgment Coach identity already exists; preserved evidence cannot be replaced." }, { status: 409 });
+      }
       throw error;
     }
     return Response.json({ id, committedAt: now }, { status: 201 });
@@ -1337,6 +1456,9 @@ export async function POST(request: Request) {
     }
     if (parent.record_type === "opportunity_monitor_run" || parent.record_type === "opportunity_monitor_registration") {
       return Response.json({ error: "Opportunity Monitor evidence is immutable and can be created only through its bounded registration and run workflows." }, { status: 400 });
+    }
+    if ((COACH_RECORD_TYPES as readonly string[]).includes(parent.record_type)) {
+      return Response.json({ error: "Judgment Coach evidence advances only through typed requests, feedback, revisions, and mastery records." }, { status: 400 });
     }
     if (parent.record_type === "founder_evidence_review") {
       const allowedFounderEventKeys = new Set(["text", "originalPreserved", "privateEvidenceConfirmed"]);

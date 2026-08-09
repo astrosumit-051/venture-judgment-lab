@@ -216,6 +216,26 @@ _Avoid_: Permanent identity, exclusive mandate, fashionable thesis
 The Lab's strict but diagnostic teaching role, which challenges unsupported claims, adapts practice to recurring weaknesses, compares current work with prior evidence, and requires revision when a gap is foundational.
 _Avoid_: Cheerleader, answer generator, school-style grader
 
+**Coach Request**:
+A dated request for diagnosis of one specific dimension of committed original work, preserving the learner's focus question and self-diagnosis while competing interpretations and benchmarks remain withheld.
+_Avoid_: Ask for an answer, pre-commitment hint, open-ended chat
+
+**Coach Feedback**:
+One append-only diagnosis linked to a Coach Request that names the unsupported inference, evidence gap, recurring error, required revision, competing interpretation, benchmark, and next difficulty adjustment without assigning a grade or supplying a model answer.
+_Avoid_: Rubric score, praise summary, rewritten learner work
+
+**Revision Attempt**:
+The learner's dated, evidence-based response to Coach Feedback, preserved beside the original work and diagnosis with its disconfirming case and Decision Delta.
+_Avoid_: Edited original, cosmetic rewrite, answer imitation
+
+**Foundational Error**:
+An unsupported inference or missing evidence bridge that makes the current judgment unreliable enough that the learner must revise before difficulty advances.
+_Avoid_: Any imperfection, stylistic preference, disagreement alone
+
+**Mastery Evidence**:
+A dimension-specific evidence state derived from independent coached attempts rather than completion, time, prestige, or a composite score. Repeated or corroborated requires at least three attempts across two companies, a genuine revision or disconfirming case, and no Foundational Error in the latest two attempts.
+_Avoid_: Mastery score, badge, self-reported confidence
+
 **Independent First Pass**:
 The learner's committed analysis and confidence recorded before the Judgment Coach reveals competing interpretations, benchmarks, or a model analysis.
 _Avoid_: Guided answer, imitation presented as judgment

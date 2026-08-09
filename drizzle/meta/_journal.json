@@ -50,6 +50,13 @@
       "when": 1786244181655,
       "tag": "0006_oval_rocket_racer",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1786246379560,
+      "tag": "0007_keen_retro_girl",
+      "breakpoints": true
     }
   ]
 }

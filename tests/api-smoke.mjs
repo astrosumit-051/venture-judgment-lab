@@ -52,6 +52,20 @@ async function automationRequest(method, body, expected, token = automationToken
   return result;
 }
 
+async function coachAutomationRequest(method, body, expected, token = automationToken) {
+  const response = await fetch(`${baseUrl}/api/automation/coach`, {
+    method,
+    headers: {
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const result = await response.json();
+  assert.equal(response.status, expected, JSON.stringify(result));
+  return result;
+}
+
 const initial = await fetch(`${baseUrl}/api/lab`, { headers }).then((response) => response.json());
 assert.deepEqual(initial, { records: [], events: [] });
 
@@ -747,6 +761,52 @@ const underwrite = await post({
   payload: underwritePayload,
 });
 
+const coachRequestPayload = (focusQuestion, learnerSelfDiagnosis) => ({
+  dimension: "diligence",
+  requestedOn: todayInChicago,
+  timezone: "America/Chicago",
+  focusQuestion,
+  learnerSelfDiagnosis,
+  independentFirstPassConfirmed: true,
+  privacyConfirmed: true,
+});
+
+await post({
+  operation: "commit_record",
+  recordType: "coach_request",
+  parentId: snapshot.id,
+  title: "Invalid pre-revealed Coach Request",
+  payload: { ...coachRequestPayload("Diagnose the Snapshot crux.", "The inference may be too broad."), modelAnswer: "Reveal this before coaching." },
+}, 400);
+const firstCoachRequest = await post({
+  operation: "commit_record",
+  recordType: "coach_request",
+  parentId: snapshot.id,
+  title: "Verification Systems Snapshot — Coach Request",
+  payload: coachRequestPayload("Where does the Snapshot thesis outrun its evidence?", "The causal bridge from workflow use to retention may be unsupported."),
+});
+await post({
+  operation: "commit_record",
+  recordType: "coach_request",
+  parentId: snapshot.id,
+  title: "Duplicate Coach Request",
+  payload: coachRequestPayload("Repeat the same diagnosis.", "The same committed work is already queued."),
+}, 409);
+const secondCoachRequest = await post({
+  operation: "commit_record",
+  recordType: "coach_request",
+  parentId: underwrite.id,
+  title: "Verification Systems Underwrite — Coach Request",
+  payload: coachRequestPayload("Does the deeper causal case resolve the Snapshot gap?", "The evidence ledger may still generalize from a narrow test."),
+});
+const thirdCoachRequest = await post({
+  operation: "commit_record",
+  recordType: "coach_request",
+  parentId: otherSnapshot.id,
+  title: "Other Verification Co Snapshot — Coach Request",
+  payload: coachRequestPayload("Does the judgment transfer across a second company?", "The company-specific evidence may not support the same inference."),
+});
+
 await post({
   operation: "commit_record",
   recordType: "diligence_case",
@@ -868,6 +928,13 @@ await postAs(otherOwnerHeaders, {
     originalPreserved: true,
     privateEvidenceConfirmed: true,
   },
+}, 404);
+await postAs(otherOwnerHeaders, {
+  operation: "commit_record",
+  recordType: "coach_request",
+  parentId: snapshot.id,
+  title: "Foreign-owner Coach Request",
+  payload: coachRequestPayload("Try to read another owner's request.", "This must remain isolated."),
 }, 404);
 await post({
   operation: "commit_record",
@@ -1320,6 +1387,8 @@ await post({
 
 await automationRequest("GET", undefined, 401, "");
 await automationRequest("GET", undefined, 401, "wrong-opportunity-monitor-token");
+await coachAutomationRequest("GET", undefined, 401, "");
+await coachAutomationRequest("GET", undefined, 401, "wrong-coach-token");
 
 const monitorRegistration = await post({ operation: "register_opportunity_monitor" });
 assert.equal(monitorRegistration.registered, true);
@@ -1327,6 +1396,91 @@ assert.equal(monitorRegistration.idempotent, false);
 const repeatedRegistration = await post({ operation: "register_opportunity_monitor" }, 200);
 assert.equal(repeatedRegistration.id, monitorRegistration.id);
 assert.equal(repeatedRegistration.idempotent, true);
+
+const initialCoachQueue = await coachAutomationRequest("GET", undefined, 200);
+assert.equal(initialCoachQueue.queue.length, 3);
+assert.deepEqual(initialCoachQueue.queue.map((item) => item.request.id).sort(), [firstCoachRequest.id, secondCoachRequest.id, thirdCoachRequest.id].sort());
+const queuedSnapshot = initialCoachQueue.queue.find((item) => item.request.id === firstCoachRequest.id);
+assert.ok(queuedSnapshot);
+assert.equal(queuedSnapshot.source.recordType, "snapshot_judgment");
+assert.equal("privateContactDetails" in queuedSnapshot.source.evidence, false);
+assert.equal("modelAnswer" in queuedSnapshot.request, false);
+
+const coachFeedbackPayload = (foundationalError) => ({
+  unsupportedInference: "The attempt infers durable retention from one repeated workflow.",
+  evidenceGap: "No independent retention cohort supports the causal bridge.",
+  recurringError: "Anecdote-to-generalization jump",
+  requiredRevision: "Separate the observation from the unproven retention mechanism and state the controlling unknown.",
+  nextDifficultyAdjustment: foundationalError ? "narrow_to_foundation" : "transfer_across_company",
+  competingInterpretation: "Observed repetition may reflect design-partner subsidy rather than durable pull.",
+  benchmark: "A defensible judgment distinguishes observed use, retention evidence, and the causal bridge between them.",
+  foundationalError,
+  genuineDisconfirmingCase: false,
+  disconfirmingCaseEvidence: "No qualifying disconfirming case was demonstrated in this attempt.",
+  privacyConfirmed: true,
+});
+
+await coachAutomationRequest("POST", {
+  requestId: firstCoachRequest.id,
+  feedback: { ...coachFeedbackPayload(true), grade: "B+" },
+}, 400);
+const firstCoachFeedback = await coachAutomationRequest("POST", {
+  requestId: firstCoachRequest.id,
+  feedback: coachFeedbackPayload(true),
+}, 201);
+assert.equal(firstCoachFeedback.evidenceState, "observed_once");
+assert.equal(firstCoachFeedback.recurringErrorCount, 1);
+await coachAutomationRequest("POST", { requestId: firstCoachRequest.id, feedback: coachFeedbackPayload(true) }, 409);
+
+const coachRevision = await post({
+  operation: "commit_record",
+  recordType: "revision_attempt",
+  parentId: firstCoachFeedback.feedbackId,
+  title: "Verification Systems — Revision Attempt",
+  payload: {
+    attemptedOn: todayInChicago,
+    timezone: "America/Chicago",
+    revisedJudgment: "Repeated workflow use is observable, but durable retention remains unproven.",
+    evidenceAdded: "The revision separates the customer observation from the retention inference.",
+    responseToUnsupportedInference: "The causal bridge is now explicitly marked as an unknown.",
+    disconfirmingCase: "Design-partner subsidy could explain the observed repetition.",
+    decisionDelta: "Confidence falls until an independent cohort supports retention.",
+    genuineRevisionConfirmed: true,
+    privacyConfirmed: true,
+  },
+});
+await post({ operation: "commit_record", recordType: "revision_attempt", parentId: firstCoachFeedback.feedbackId, title: "Duplicate Revision", payload: {
+  attemptedOn: todayInChicago,
+  timezone: "America/Chicago",
+  revisedJudgment: "A duplicate must not replace the first revision.",
+  evidenceAdded: "None.",
+  responseToUnsupportedInference: "Already answered.",
+  disconfirmingCase: "Already preserved.",
+  decisionDelta: "No new delta.",
+  genuineRevisionConfirmed: true,
+  privacyConfirmed: true,
+} }, 409);
+
+const secondCoachFeedback = await coachAutomationRequest("POST", {
+  requestId: secondCoachRequest.id,
+  feedback: coachFeedbackPayload(false),
+}, 201);
+assert.equal(secondCoachFeedback.evidenceState, "developing");
+assert.equal(secondCoachFeedback.recurringErrorCount, 2);
+const thirdCoachFeedback = await coachAutomationRequest("POST", {
+  requestId: thirdCoachRequest.id,
+  feedback: coachFeedbackPayload(false),
+}, 201);
+assert.equal(thirdCoachFeedback.evidenceState, "repeated_or_corroborated");
+assert.equal(thirdCoachFeedback.recurringErrorCount, 3);
+assert.deepEqual(thirdCoachFeedback.remainingGaps, []);
+assert.deepEqual(await coachAutomationRequest("GET", undefined, 200), { queue: [] });
+await post({
+  operation: "append_event",
+  recordId: firstCoachFeedback.feedbackId,
+  eventType: "reflection",
+  eventData: { text: "Generic updates cannot replace typed coaching evidence.", originalPreserved: true },
+}, 400);
 
 const monitorState = await automationRequest("GET", undefined, 200);
 assert.equal(monitorState.targets.length, 7);
@@ -1435,7 +1589,7 @@ assert.equal(currentMonitorState.monitorHealth.missedScheduledRun, false);
 assert.equal(currentMonitorState.opportunities.find((opportunity) => opportunity.officialUrl.includes("4633431005")).status, "Closed");
 
 const final = await fetch(`${baseUrl}/api/lab`, { headers }).then((response) => response.json());
-assert.equal(final.records.length, 38);
+assert.equal(final.records.length, 48);
 assert.equal(final.events.length, 10);
 const lockedSourcingLead = final.records.find((record) => record.id === sourcingLead.id);
 assert.equal(lockedSourcingLead.payload.normalizedCompanyDomain, "verification.example.com");
@@ -1475,5 +1629,15 @@ assert.deepEqual(diligenceStages.map((record) => record.payload.stageKey), ["fou
 assert.equal(diligenceStages.every((record) => record.payload.privacyConfirmed === true), true);
 assert.equal(final.events.filter((event) => event.recordId === diligenceCase.id).length, 1);
 assert.equal(final.events.filter((event) => event.recordId === oralStage.id).length, 1);
+assert.equal(final.records.filter((record) => record.recordType === "coach_request").length, 3);
+assert.equal(final.records.filter((record) => record.recordType === "coach_feedback").length, 3);
+assert.equal(final.records.filter((record) => record.recordType === "revision_attempt").length, 1);
+assert.equal(final.records.find((record) => record.id === coachRevision.id).payload.sourceRecordId, snapshot.id);
+const masteryEvidence = final.records.filter((record) => record.recordType === "mastery_evidence");
+assert.equal(masteryEvidence.length, 3);
+const corroboratedMastery = masteryEvidence.find((record) => record.payload.evidenceState === "repeated_or_corroborated");
+assert.ok(corroboratedMastery);
+assert.equal(corroboratedMastery.payload.latestTwoClear, true);
+assert.equal(corroboratedMastery.payload.companyIdentities.length, 2);
 
-console.log("API smoke passed: 38 immutable records, 10 append-only events, an exact seven-stage Diligence Case with bounded later history, cycle-safe idempotent owner-bound opportunity monitoring, prospective experiment and forecast boundaries, typed sourcing and recruiting evidence, external-action approval gates, Founder Evidence safeguards, calibration scoring, and owner isolation intact.");
+console.log("API smoke passed: 48 immutable records, 10 append-only events, an exact seven-stage Diligence Case, a bounded owner-isolated Coach round trip with preserved revision and corroborated mastery evidence, cycle-safe idempotent opportunity monitoring, prospective experiment and forecast boundaries, typed sourcing and recruiting evidence, external-action approval gates, Founder Evidence safeguards, and calibration scoring intact.");

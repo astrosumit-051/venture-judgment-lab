@@ -28,6 +28,13 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
     readFile(new URL("../records/diligence-development-ladder-2026-08-08.md", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0006_oval_rocket_racer.sql", import.meta.url), "utf8"),
   ]);
+  const [coach, coachView, coachRoute, coachRecord, coachMigration] = await Promise.all([
+    readFile(new URL("../app/coach.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/CoachView.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/automation/coach/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../records/judgment-coach-and-mastery-evidence-2026-08-08.md", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0007_keen_retro_girl.sql", import.meta.url), "utf8"),
+  ]);
 
   assert.match(layout, /Venture Judgment Lab/);
   assert.match(layout, /Evidence before narrative\./);
@@ -67,6 +74,7 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(sourcingView, /raw messages/);
   assert.match(app, /RecruitingView/);
   assert.match(app, /DiligenceView/);
+  assert.match(app, /CoachView/);
   assert.match(recruiting, /recruiting_opportunity/);
   assert.match(recruiting, /opportunity_observation/);
   assert.match(recruiting, /recruiting_interaction/);
@@ -148,6 +156,28 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(api, /Commit .* before any later Diligence stage/);
   assert.match(api, /Diligence updates require a bounded note/);
   assert.match(app, /contains only bounded, approved evidence/);
+  assert.match(coach, /repeated_or_corroborated/);
+  assert.match(coach, /attempts\.length >= 3 && companyIdentities\.length >= 2 && latestTwoClear && hasRevisionOrDisconfirmingCase/);
+  assert.match(coach, /grades, scores, and model answers are rejected/);
+  assert.match(coachView, /Reveal the gap, not a grade or answer/);
+  assert.match(coachView, /Queued — interpretations withheld/);
+  assert.match(coachView, /Original remains immutable/);
+  assert.match(coachRoute, /verifyAutomationBearer/);
+  assert.match(coachRoute, /boundedCoachSource/);
+  assert.match(coachRoute, /recurringErrorCount/);
+  assert.match(coachRoute, /db\.batch/);
+  assert.doesNotMatch(coachRoute, /UPDATE lab_records|DELETE FROM lab_records/);
+  assert.match(coachRecord, /at least three distinct committed Independent First Pass attempts/);
+  assert.match(coachRecord, /no Foundational Error in the latest two attempts/);
+  assert.match(coachRecord, /one private\s+deployment for Phase 2/);
+  assert.match(coachMigration, /idx_lab_records_unique_coach_request/);
+  assert.match(coachMigration, /idx_lab_records_unique_coach_feedback/);
+  assert.match(coachMigration, /idx_lab_records_unique_revision_attempt/);
+  assert.match(coachMigration, /idx_lab_records_unique_mastery_evidence/);
+  assert.match(runtime, /idx_lab_records_unique_coach_request/);
+  assert.match(runtime, /idx_lab_records_unique_coach_feedback/);
+  assert.match(runtime, /idx_lab_records_unique_revision_attempt/);
+  assert.match(runtime, /idx_lab_records_unique_mastery_evidence/);
   assert.match(calibration, /calculateBrierScore/);
   assert.match(calibration, /isCanonicalDate/);
   assert.match(calibration, /dateInTimeZone/);

@@ -45,6 +45,18 @@ export const labRecords = sqliteTable(
     uniqueIndex("idx_lab_records_unique_diligence_stage")
       .on(table.ownerId, table.parentId, sql`json_extract(${table.payloadJson}, '$.stageKey')`)
       .where(sql`${table.recordType} = 'diligence_stage'`),
+    uniqueIndex("idx_lab_records_unique_coach_request")
+      .on(table.ownerId, table.parentId, sql`json_extract(${table.payloadJson}, '$.dimension')`)
+      .where(sql`${table.recordType} = 'coach_request'`),
+    uniqueIndex("idx_lab_records_unique_coach_feedback")
+      .on(table.ownerId, table.parentId)
+      .where(sql`${table.recordType} = 'coach_feedback'`),
+    uniqueIndex("idx_lab_records_unique_revision_attempt")
+      .on(table.ownerId, table.parentId)
+      .where(sql`${table.recordType} = 'revision_attempt'`),
+    uniqueIndex("idx_lab_records_unique_mastery_evidence")
+      .on(table.ownerId, sql`json_extract(${table.payloadJson}, '$.recordKey')`)
+      .where(sql`${table.recordType} = 'mastery_evidence'`),
   ],
 );
 

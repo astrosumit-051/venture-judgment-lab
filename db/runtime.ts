@@ -77,6 +77,18 @@ export async function ensureLabSchema(): Promise<D1Database> {
     db.prepare(
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_diligence_stage ON lab_records(owner_id, parent_id, json_extract(payload_json, '$.stageKey')) WHERE record_type = 'diligence_stage'",
     ),
+    db.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_coach_request ON lab_records(owner_id, parent_id, json_extract(payload_json, '$.dimension')) WHERE record_type = 'coach_request'",
+    ),
+    db.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_coach_feedback ON lab_records(owner_id, parent_id) WHERE record_type = 'coach_feedback'",
+    ),
+    db.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_revision_attempt ON lab_records(owner_id, parent_id) WHERE record_type = 'revision_attempt'",
+    ),
+    db.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_mastery_evidence ON lab_records(owner_id, json_extract(payload_json, '$.recordKey')) WHERE record_type = 'mastery_evidence'",
+    ),
     db.prepare("PRAGMA optimize"),
   ]);
   return db;
