@@ -149,31 +149,6 @@ export const RECRUITING_TARGET_SEEDS: RecruitingTargetSeed[] = [
     dueDate: "2026-08-09",
   },
   {
-    firm: "Dorm Room Fund",
-    roleTitle: "Philly & Southeast Investment Partner — next cycle unverified",
-    cycleKey: "investment-partner-next-cycle-unverified",
-    opportunityClass: "Investing Milestone",
-    funnelClass: "Milestone",
-    officialUrl: "https://join.dormroomfund.com/",
-    normalizedOfficialUrl: "https://join.dormroomfund.com",
-    location: "Kentucky / Philly & Southeast team",
-    workMode: "Remote regional team if a new cycle opens",
-    discoveredOn: "2026-08-08",
-    verifiedOn: "2026-08-09",
-    timezone: "America/Chicago",
-    initialStatus: "Waiting",
-    publishedDeadline: "",
-    deadlineTimezone: "Not stated",
-    compensationEvidence: "The recurring-role page establishes travel reimbursement but no wage, stipend, salary, equity, or employment classification.",
-    roleScope: "The published recurring role describes finding founders, evaluating companies, making investment decisions, and weekly regional meetings for 10–15 hours; no 2026–2027 application is verified.",
-    qualificationReason: "A future verified cycle could provide unusually real student investment ownership, but it remains an Investing Milestone that must replace Lab hours rather than stack on top.",
-    immigrationState: "Unknown",
-    immigrationEvidence: "The recurring-role page says international students at U.S. or Canadian colleges may apply, but it does not establish employment classification, CPT requirements, or a current cycle.",
-    authorizationClaim: false,
-    nextAction: "Monitor for new first-party cycle confirmation; do not prepare or claim an application until a live form and deadline are verified.",
-    dueDate: "2026-08-10",
-  },
-  {
     firm: "Keyhorse Capital",
     roleTitle: "Summer 2027 investment inquiry",
     cycleKey: "summer-2027-inquiry",
@@ -200,12 +175,16 @@ export const RECRUITING_TARGET_SEEDS: RecruitingTargetSeed[] = [
   },
 ];
 
+const LEGACY_RECRUITING_CYCLE_KEYS: Record<string, string> = {
+  "https://join.dormroomfund.com|Philly & Southeast Investment Partner": "investment-partner-2026-2027",
+};
+
 export function legacyRecruitingCycleKey(payload: Record<string, unknown>): string {
   const normalizedUrl = text(payload, "normalizedOfficialUrl") || normalizeRecruitingUrl(payload.officialUrl);
   const roleTitle = text(payload, "roleTitle");
   return RECRUITING_TARGET_SEEDS.find((seed) => (
     seed.normalizedOfficialUrl === normalizedUrl && seed.roleTitle === roleTitle
-  ))?.cycleKey ?? "";
+  ))?.cycleKey ?? LEGACY_RECRUITING_CYCLE_KEYS[`${normalizedUrl}|${roleTitle}`] ?? "";
 }
 
 const requiredKeys: Record<RecruitingRecordType, readonly string[]> = {

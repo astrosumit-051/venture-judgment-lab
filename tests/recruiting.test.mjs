@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   computeRecruitingMetrics,
+  legacyRecruitingCycleKey,
   RECRUITING_TARGET_SEEDS,
   recruitingRecordKey,
   validateRecruitingPayload,
@@ -152,10 +153,7 @@ test("verified target seeds preserve live classification and status boundaries",
 
   assert.equal(bessemer?.opportunityClass, "Qualifying Internship");
   assert.equal(bessemer?.initialStatus, "Open");
-  assert.equal(dormRoomFund?.cycleKey, "investment-partner-next-cycle-unverified");
-  assert.equal(dormRoomFund?.initialStatus, "Waiting");
-  assert.equal(dormRoomFund?.publishedDeadline, "");
-  assert.match(dormRoomFund?.nextAction ?? "", /new first-party cycle confirmation/i);
+  assert.equal(dormRoomFund, undefined);
   assert.equal(keyhorse?.opportunityClass, "Relationship-led target");
   assert.equal(keyhorse?.initialStatus, "No public opening");
   assert.equal(recruitingRecordKey("recruiting_opportunity", opportunityPayload), "https://example.com/role|summer-investor-2027");
@@ -166,6 +164,10 @@ test("verified target seeds preserve live classification and status boundaries",
   const legacyBessemer = { ...RECRUITING_TARGET_SEEDS[0] };
   delete legacyBessemer.cycleKey;
   assert.equal(recruitingRecordKey("recruiting_opportunity", legacyBessemer), `${RECRUITING_TARGET_SEEDS[0].normalizedOfficialUrl}|summer-analyst-2027`);
+  assert.equal(legacyRecruitingCycleKey({
+    normalizedOfficialUrl: "https://join.dormroomfund.com",
+    roleTitle: "Philly & Southeast Investment Partner",
+  }), "investment-partner-2026-2027");
 });
 
 test("child identity rejects exact duplicates without colliding materially different same-day evidence", () => {
