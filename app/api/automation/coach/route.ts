@@ -67,7 +67,7 @@ export async function GET(request: Request) {
   const db = await ensureLabSchema();
   const owner = await registeredOwner(db, request);
   if (!owner) return Response.json({ error: "Valid registered automation authorization is required." }, { status: 401 });
-  const [queue, feedbackHistory] = await Promise.all([db.prepare(
+  const queue = await db.prepare(
     `SELECT request.id, request.parent_id, request.title, request.payload_json, request.committed_at,
             source.record_type AS source_type, source.title AS source_title, source.payload_json AS source_payload_json,
             source.committed_at AS source_committed_at
@@ -89,21 +89,29 @@ export async function GET(request: Request) {
     source_title: string;
     source_payload_json: string;
     source_committed_at: string;
-  }>(), db.prepare(
+  }>();
+  const queuedDimensions = [...new Set((queue.results ?? []).map((row) => text(parseJson(row.payload_json).dimension, 80)).filter(Boolean))];
+  const feedbackHistory = queuedDimensions.length === 0
+    ? { results: [] as { payload_json: string; committed_at: string }[] }
+    : await db.prepare(
     `SELECT payload_json, committed_at FROM lab_records WHERE owner_id = ? AND record_type = 'coach_feedback'
+     AND json_extract(payload_json, '$.dimension') IN (${queuedDimensions.map(() => "?").join(", ")})
      ORDER BY committed_at ASC`,
-  ).bind(owner).all<{ payload_json: string; committed_at: string }>()]);
-  const recurringByPattern = new Map<string, { dimension: string; kind: string; count: number; latestDiagnosis: string; latestAt: string }>();
+  ).bind(owner, ...queuedDimensions).all<{ payload_json: string; committed_at: string }>();
+  const recurringByPattern = new Map<string, { dimension: string; kind: string; patternKey: string; count: number; latestDiagnosis: string; latestAt: string }>();
   for (const row of feedbackHistory.results ?? []) {
     const payload = parseJson(row.payload_json);
     const dimension = text(payload.dimension, 80);
     const kind = text(payload.recurringErrorKind, 100);
     if (!dimension || !kind) continue;
-    const key = `${dimension}|${kind}`;
+    const patternKey = kind === "other_bounded_pattern" ? text(payload.recurringErrorPatternKey, 100) : kind;
+    if (!patternKey) continue;
+    const key = `${dimension}|${kind}|${patternKey}`;
     const prior = recurringByPattern.get(key);
     recurringByPattern.set(key, {
       dimension,
       kind,
+      patternKey,
       count: (prior?.count ?? 0) + 1,
       latestDiagnosis: text(payload.recurringError, 5000),
       latestAt: row.committed_at,
@@ -163,7 +171,7 @@ export async function POST(request: Request) {
   const requestPayload = parseJson(requestRow.payload_json);
   const submitted = body.feedback;
   const submittedKeys = new Set([
-    "unsupportedInference", "evidenceGap", "recurringError", "recurringErrorKind", "requiredRevision", "nextDifficultyAdjustment",
+    "unsupportedInference", "evidenceGap", "recurringError", "recurringErrorKind", "recurringErrorPatternKey", "requiredRevision", "nextDifficultyAdjustment",
     "competingInterpretation", "benchmark", "foundationalError", "genuineDisconfirmingCase",
     "disconfirmingCaseEvidence", "privacyConfirmed",
   ]);
@@ -173,11 +181,16 @@ export async function POST(request: Request) {
   const dimension = text(requestPayload.dimension, 80) as CoachDimension;
   const recurringError = text(submitted.recurringError, 5000);
   const recurringErrorKind = text(submitted.recurringErrorKind, 100);
+  const recurringErrorPatternKey = text(submitted.recurringErrorPatternKey, 100);
+  const recurrenceKey = recurringErrorKind === "other_bounded_pattern" ? recurringErrorPatternKey : recurringErrorKind;
   const priorSameError = await db.prepare(
     `SELECT count(*) AS count FROM lab_records WHERE owner_id = ? AND record_type = 'coach_feedback'
      AND json_extract(payload_json, '$.dimension') = ?
-     AND json_extract(payload_json, '$.recurringErrorKind') = ?`,
-  ).bind(owner, dimension, recurringErrorKind).first<{ count: number }>();
+     AND json_extract(payload_json, '$.recurringErrorKind') = ?
+     AND CASE WHEN ? = 'other_bounded_pattern'
+       THEN json_extract(payload_json, '$.recurringErrorPatternKey') = ?
+       ELSE 1 = 1 END`,
+  ).bind(owner, dimension, recurringErrorKind, recurringErrorKind, recurrenceKey).first<{ count: number }>();
   const timezone = text(requestPayload.timezone, 100);
   const respondedOn = dateInTimeZone(new Date(), timezone);
   const feedbackId = crypto.randomUUID();
@@ -193,6 +206,7 @@ export async function POST(request: Request) {
     evidenceGap: submitted.evidenceGap,
     recurringError,
     recurringErrorKind,
+    ...(recurringErrorKind === "other_bounded_pattern" ? { recurringErrorPatternKey } : {}),
     recurringErrorCount: Number(priorSameError?.count ?? 0) + 1,
     requiredRevision: submitted.requiredRevision,
     nextDifficultyAdjustment: submitted.nextDifficultyAdjustment,

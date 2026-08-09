@@ -221,7 +221,7 @@ A dated request for diagnosis of one specific dimension of committed original wo
 _Avoid_: Ask for an answer, pre-commitment hint, open-ended chat
 
 **Coach Feedback**:
-One append-only diagnosis linked to a Coach Request that names the unsupported inference, evidence gap, recurring error, required revision, competing interpretation, benchmark, and next difficulty adjustment without assigning a grade or supplying a model answer.
+One append-only diagnosis linked to a Coach Request that names the unsupported inference, evidence gap, recurring error, required revision, competing interpretation, benchmark, and next difficulty adjustment without assigning a grade or supplying a model answer. Another bounded error pattern requires its own stable sub-key, and prior diagnoses are disclosed to the operator only for dimensions with queued requests.
 _Avoid_: Rubric score, praise summary, rewritten learner work
 
 **Revision Attempt**:

@@ -73,6 +73,13 @@ test("Coach Feedback is diagnostic, bounded, and never a grade or model answer",
   assert.match(validateCoachPayload("coach_feedback", { ...feedback, grade: "B+" }, today), /undeclared field/i);
   assert.match(validateCoachPayload("coach_feedback", { ...feedback, modelAnswer: "Use this memo." }, today), /undeclared field/i);
   assert.match(validateCoachPayload("coach_feedback", { ...feedback, nextDifficultyAdjustment: "advance_independently" }, today), /foundational error/i);
+  assert.match(validateCoachPayload("coach_feedback", { ...feedback, recurringErrorKind: "other_bounded_pattern" }, today), /stable lowercase underscore key/i);
+  assert.equal(validateCoachPayload("coach_feedback", {
+    ...feedback,
+    recurringErrorKind: "other_bounded_pattern",
+    recurringErrorPatternKey: "market_proxy_substitution",
+  }, today), null);
+  assert.match(validateCoachPayload("coach_feedback", { ...feedback, recurringErrorPatternKey: "market_proxy_substitution" }, today), /permitted only/i);
 });
 
 test("Revision Attempt preserves the source and identifies a genuine evidence-based change", () => {

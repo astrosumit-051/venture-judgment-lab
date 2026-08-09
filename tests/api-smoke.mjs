@@ -761,8 +761,8 @@ const underwrite = await post({
   payload: underwritePayload,
 });
 
-const coachRequestPayload = (focusQuestion, learnerSelfDiagnosis) => ({
-  dimension: "diligence",
+const coachRequestPayload = (focusQuestion, learnerSelfDiagnosis, dimension = "diligence") => ({
+  dimension,
   requestedOn: todayInChicago,
   timezone: "America/Chicago",
   focusQuestion,
@@ -805,6 +805,20 @@ const thirdCoachRequest = await post({
   parentId: otherSnapshot.id,
   title: "Other Verification Co Snapshot — Coach Request",
   payload: coachRequestPayload("Does the judgment transfer across a second company?", "The company-specific evidence may not support the same inference."),
+});
+const fourthCoachRequest = await post({
+  operation: "commit_record",
+  recordType: "coach_request",
+  parentId: snapshot.id,
+  title: "Verification Systems Snapshot Communication — Coach Request",
+  payload: coachRequestPayload("Is the decision delta communicated precisely?", "The wording may substitute market evidence for customer evidence.", "communication"),
+});
+const fifthCoachRequest = await post({
+  operation: "commit_record",
+  recordType: "coach_request",
+  parentId: underwrite.id,
+  title: "Verification Systems Underwrite Communication — Coach Request",
+  payload: coachRequestPayload("Does the communication preserve source reliability?", "The wording may flatten primary and secondary sources.", "communication"),
 });
 
 await post({
@@ -1398,10 +1412,10 @@ assert.equal(repeatedRegistration.id, monitorRegistration.id);
 assert.equal(repeatedRegistration.idempotent, true);
 
 const initialCoachQueue = await coachAutomationRequest("GET", undefined, 200);
-assert.equal(initialCoachQueue.queue.length, 3);
+assert.equal(initialCoachQueue.queue.length, 5);
 assert.equal(initialCoachQueue.recurringPatterns.length, 0);
 assert.ok(initialCoachQueue.errorKinds.includes("anecdote_to_generalization"));
-assert.deepEqual(initialCoachQueue.queue.map((item) => item.request.id).sort(), [firstCoachRequest.id, secondCoachRequest.id, thirdCoachRequest.id].sort());
+assert.deepEqual(initialCoachQueue.queue.map((item) => item.request.id).sort(), [firstCoachRequest.id, secondCoachRequest.id, thirdCoachRequest.id, fourthCoachRequest.id, fifthCoachRequest.id].sort());
 const queuedSnapshot = initialCoachQueue.queue.find((item) => item.request.id === firstCoachRequest.id);
 assert.ok(queuedSnapshot);
 assert.equal(queuedSnapshot.source.recordType, "snapshot_judgment");
@@ -1436,6 +1450,7 @@ assert.equal(firstCoachFeedback.recurringErrorCount, 1);
 await coachAutomationRequest("POST", { requestId: firstCoachRequest.id, feedback: coachFeedbackPayload(true) }, 409);
 const queueAfterFirstFeedback = await coachAutomationRequest("GET", undefined, 200);
 assert.equal(queueAfterFirstFeedback.recurringPatterns[0].kind, "anecdote_to_generalization");
+assert.equal(queueAfterFirstFeedback.recurringPatterns[0].patternKey, "anecdote_to_generalization");
 assert.equal(queueAfterFirstFeedback.recurringPatterns[0].count, 1);
 
 const secondCoachFeedback = await coachAutomationRequest("POST", {
@@ -1451,6 +1466,28 @@ const thirdCoachFeedback = await coachAutomationRequest("POST", {
 assert.equal(thirdCoachFeedback.evidenceState, "developing");
 assert.equal(thirdCoachFeedback.recurringErrorCount, 3);
 assert.ok(thirdCoachFeedback.remainingGaps.includes("a genuine revision or disconfirming case"));
+
+const boundedOtherFeedback = (patternKey, recurringError) => ({
+  ...coachFeedbackPayload(false, recurringError),
+  recurringErrorKind: "other_bounded_pattern",
+  recurringErrorPatternKey: patternKey,
+});
+await coachAutomationRequest("POST", {
+  requestId: fourthCoachRequest.id,
+  feedback: { ...boundedOtherFeedback("market_proxy_substitution", "The wording substitutes a market proxy for customer evidence."), recurringErrorPatternKey: undefined },
+}, 400);
+const fourthCoachFeedback = await coachAutomationRequest("POST", {
+  requestId: fourthCoachRequest.id,
+  feedback: boundedOtherFeedback("market_proxy_substitution", "The wording substitutes a market proxy for customer evidence."),
+}, 201);
+assert.equal(fourthCoachFeedback.recurringErrorCount, 1);
+const queueAfterFirstOtherPattern = await coachAutomationRequest("GET", undefined, 200);
+assert.deepEqual(queueAfterFirstOtherPattern.recurringPatterns.map((pattern) => pattern.patternKey), ["market_proxy_substitution"]);
+const fifthCoachFeedback = await coachAutomationRequest("POST", {
+  requestId: fifthCoachRequest.id,
+  feedback: boundedOtherFeedback("source_hierarchy_flattening", "The wording gives primary and secondary sources equal reliability."),
+}, 201);
+assert.equal(fifthCoachFeedback.recurringErrorCount, 1);
 
 const coachRevision = await post({
   operation: "commit_record",
@@ -1484,7 +1521,7 @@ await post({ operation: "commit_record", recordType: "revision_attempt", parentI
 } }, 409);
 const emptyCoachQueue = await coachAutomationRequest("GET", undefined, 200);
 assert.equal(emptyCoachQueue.queue.length, 0);
-assert.equal(emptyCoachQueue.recurringPatterns[0].count, 3);
+assert.deepEqual(emptyCoachQueue.recurringPatterns, []);
 await post({
   operation: "append_event",
   recordId: firstCoachFeedback.feedbackId,
@@ -1605,7 +1642,7 @@ assert.equal(currentMonitorState.monitorHealth.missedScheduledRun, false);
 assert.equal(currentMonitorState.opportunities.find((opportunity) => opportunity.officialUrl.includes("4633431005")).status, "Closed");
 
 const final = await fetch(`${baseUrl}/api/lab`, { headers }).then((response) => response.json());
-assert.equal(final.records.length, 49);
+assert.equal(final.records.length, 55);
 assert.equal(final.events.length, 11);
 const lockedSourcingLead = final.records.find((record) => record.id === sourcingLead.id);
 assert.equal(lockedSourcingLead.payload.normalizedCompanyDomain, "verification.example.com");
@@ -1645,15 +1682,15 @@ assert.deepEqual(diligenceStages.map((record) => record.payload.stageKey), ["fou
 assert.equal(diligenceStages.every((record) => record.payload.privacyConfirmed === true), true);
 assert.equal(final.events.filter((event) => event.recordId === diligenceCase.id).length, 1);
 assert.equal(final.events.filter((event) => event.recordId === oralStage.id).length, 1);
-assert.equal(final.records.filter((record) => record.recordType === "coach_request").length, 3);
-assert.equal(final.records.filter((record) => record.recordType === "coach_feedback").length, 3);
+assert.equal(final.records.filter((record) => record.recordType === "coach_request").length, 5);
+assert.equal(final.records.filter((record) => record.recordType === "coach_feedback").length, 5);
 assert.equal(final.records.filter((record) => record.recordType === "revision_attempt").length, 1);
 assert.equal(final.records.find((record) => record.id === coachRevision.id).payload.sourceRecordId, snapshot.id);
 const masteryEvidence = final.records.filter((record) => record.recordType === "mastery_evidence");
-assert.equal(masteryEvidence.length, 4);
+assert.equal(masteryEvidence.length, 6);
 const corroboratedMastery = masteryEvidence.find((record) => record.payload.evidenceState === "repeated_or_corroborated");
 assert.ok(corroboratedMastery);
 assert.equal(corroboratedMastery.payload.latestTwoClear, true);
 assert.equal(corroboratedMastery.payload.companyIdentities.length, 2);
 
-console.log("API smoke passed: 49 immutable records, 11 append-only events, an exact seven-stage Diligence Case, a bounded owner-isolated Coach round trip with revision-last mastery recomputation, taxonomy-backed recurring errors, and append-only correction history, cycle-safe idempotent opportunity monitoring, prospective experiment and forecast boundaries, typed sourcing and recruiting evidence, external-action approval gates, Founder Evidence safeguards, and calibration scoring intact.");
+console.log("API smoke passed: 55 immutable records, 11 append-only events, an exact seven-stage Diligence Case, a bounded owner-isolated Coach round trip with revision-last mastery recomputation, queue-scoped diagnoses, distinct custom recurring-error keys, and append-only correction history, cycle-safe idempotent opportunity monitoring, prospective experiment and forecast boundaries, typed sourcing and recruiting evidence, external-action approval gates, Founder Evidence safeguards, and calibration scoring intact.");

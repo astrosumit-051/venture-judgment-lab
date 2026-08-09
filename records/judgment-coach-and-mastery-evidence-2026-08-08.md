@@ -56,8 +56,11 @@ disconfirmation, base-rate neglect, identity or attribution error, calibration
 error, founder halo effect, unclear Decision Delta, communication without
 evidence, or another explicitly bounded pattern. The diagnosis remains
 attempt-specific prose, while the stable kind detects the same failure across
-different wording. The operator queue exposes prior kinds, counts, and latest
-diagnoses so recurrence is a deliberate comparison rather than a string match.
+different wording. `other_bounded_pattern` additionally requires a stable,
+lowercase underscore sub-key so unrelated errors can never share one recurrence
+count. The operator queue exposes prior kinds, keys, counts, and latest
+diagnoses only for dimensions represented by currently queued requests. It
+returns no historical diagnoses when the queue is empty.
 
 ### Revision Attempt
 

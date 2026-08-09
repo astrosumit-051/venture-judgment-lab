@@ -41,6 +41,8 @@ export const COACH_ERROR_KINDS = [
   "other_bounded_pattern",
 ] as const;
 
+const boundedCoachErrorPatternKey = /^[a-z0-9]+(?:_[a-z0-9]+){1,7}$/;
+
 export const MASTERY_EVIDENCE_STATES = [
   "observed_once",
   "developing",
@@ -225,7 +227,7 @@ export function validateCoachPayload(recordType: string, payload: Record<string,
   if (recordType === "coach_feedback") {
     const allowed = [
       "requestId", "sourceRecordId", "dimension", "companyIdentity", "respondedOn", "timezone", "feedbackKey",
-      "unsupportedInference", "evidenceGap", "recurringError", "recurringErrorKind", "recurringErrorCount", "requiredRevision", "nextDifficultyAdjustment",
+      "unsupportedInference", "evidenceGap", "recurringError", "recurringErrorKind", "recurringErrorPatternKey", "recurringErrorCount", "requiredRevision", "nextDifficultyAdjustment",
       "competingInterpretation", "benchmark", "foundationalError", "genuineDisconfirmingCase",
       "disconfirmingCaseEvidence", "privacyConfirmed",
     ];
@@ -240,6 +242,13 @@ export function validateCoachPayload(recordType: string, payload: Record<string,
     }
     if (!(COACH_ERROR_KINDS as readonly unknown[]).includes(payload.recurringErrorKind)) {
       return "Coach Feedback needs one stable recurring-error kind.";
+    }
+    if (payload.recurringErrorKind === "other_bounded_pattern") {
+      if (typeof payload.recurringErrorPatternKey !== "string" || !boundedCoachErrorPatternKey.test(payload.recurringErrorPatternKey)) {
+        return "Another bounded pattern needs a stable lowercase underscore key with at least two terms.";
+      }
+    } else if (payload.recurringErrorPatternKey !== undefined) {
+      return "A custom recurring-error pattern key is permitted only for another bounded pattern.";
     }
     if (typeof payload.foundationalError !== "boolean" || typeof payload.genuineDisconfirmingCase !== "boolean") {
       return "Coach Feedback must state whether the error is foundational and whether a genuine disconfirming case exists.";
