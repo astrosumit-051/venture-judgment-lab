@@ -181,15 +181,6 @@ export function evaluateMasteryFromHistory(
   return evaluateMasteryEvidence(dimension, attempts);
 }
 
-export async function evaluateOwnerMastery(
-  db: D1Database,
-  owner: string,
-  dimension: CoachDimension,
-  pending: PendingCoachRecord[] = [],
-): Promise<MasteryEvaluation> {
-  return evaluateMasteryFromHistory(await loadOwnerCoachHistory(db, owner), dimension, pending);
-}
-
 export function masteryEvidencePayload(values: {
   evaluation: MasteryEvaluation;
   triggerRecordId: string;

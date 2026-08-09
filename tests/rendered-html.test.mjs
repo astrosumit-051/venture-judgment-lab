@@ -170,7 +170,7 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(coachRoute, /recurringErrorCount/);
   assert.match(coachRoute, /recurringPatterns/);
   assert.match(coachRoute, /db\.batch/);
-  assert.match(coachPersistence, /evaluateOwnerMastery/);
+  assert.match(coachPersistence, /insertCoachRecordWhenHistoryCurrent/);
   assert.match(coachPersistence, /triggerRecordType/);
   assert.match(api, /Judgment Coach corrections and hindsight require a bounded note/);
   assert.doesNotMatch(coachRoute, /UPDATE lab_records|DELETE FROM lab_records/);
