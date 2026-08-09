@@ -783,8 +783,294 @@ await post({
   ],
 });
 
+const recruitingOpportunityPayload = {
+  firm: "Verification Ventures",
+  roleTitle: "Summer Investor 2027",
+  opportunityClass: "Qualifying Internship",
+  funnelClass: "Qualified role",
+  officialUrl: `https://example.com/recruiting/${suffix}`,
+  location: "New York, NY",
+  workMode: "On site",
+  discoveredOn: todayInChicago,
+  verifiedOn: todayInChicago,
+  timezone: "America/Chicago",
+  initialStatus: "Open",
+  publishedDeadline: "",
+  deadlineTimezone: "Not stated",
+  compensationEvidence: "$1,000 per week in this synthetic verification role.",
+  roleScope: "Sourcing, diligence, and direct investment-team exposure.",
+  qualificationReason: "A paid direct-investing internship used to verify the qualified-role denominator.",
+  immigrationState: "General eligibility",
+  immigrationEvidence: "General eligibility is preserved; this exact role is not authorized.",
+  authorizationClaim: false,
+  nextAction: "Obtain role-specific DSO evidence before making an authorization claim.",
+  dueDate: tomorrowInChicago,
+};
+
+await post({
+  operation: "commit_record",
+  recordType: "recruiting_opportunity",
+  title: "Invalid authorization claim",
+  payload: { ...recruitingOpportunityPayload, authorizationClaim: true },
+}, 400);
+
+const recruitingOpportunity = await post({
+  operation: "commit_record",
+  recordType: "recruiting_opportunity",
+  title: "Verification Ventures — Summer Investor 2027",
+  payload: recruitingOpportunityPayload,
+});
+
+await post({
+  operation: "commit_record",
+  recordType: "recruiting_opportunity",
+  title: "Duplicate Recruiting Opportunity",
+  payload: { ...recruitingOpportunityPayload, officialUrl: `${recruitingOpportunityPayload.officialUrl}/` },
+}, 409);
+
+const observationPayload = {
+  opportunityId: recruitingOpportunity.id,
+  observedOn: todayInChicago,
+  timezone: "America/Chicago",
+  status: "Offer",
+  sourceType: "First-party page",
+  sourceReference: `${recruitingOpportunityPayload.officialUrl}/offer-status`,
+  materialChange: "A synthetic offer state verifies the typed current-status overlay.",
+  opportunityClass: "Qualifying Internship",
+  funnelClass: "Qualified role",
+  immigrationState: "Employer-compatible",
+  immigrationEvidence: "The employer-side synthetic constraints are compatible; authorization remains unclaimed.",
+  authorizationClaim: false,
+  nextAction: "Obtain the final role-specific authorization before work begins.",
+  dueDate: tomorrowInChicago,
+  privateEvidenceConfirmed: false,
+};
+
+await post({
+  operation: "commit_record",
+  recordType: "opportunity_observation",
+  parentId: recruitingOpportunity.id,
+  title: "Wrong-timezone Observation",
+  payload: { ...observationPayload, timezone: "America/New_York" },
+}, 400);
+
+await post({
+  operation: "commit_record",
+  recordType: "opportunity_observation",
+  parentId: recruitingOpportunity.id,
+  title: "Prediscovery Observation",
+  payload: { ...observationPayload, observedOn: yesterdayInChicago },
+}, 400);
+
+await post({
+  operation: "commit_record",
+  recordType: "opportunity_observation",
+  parentId: recruitingOpportunity.id,
+  title: "Relabeled Opportunity Observation",
+  payload: { ...observationPayload, funnelClass: "Milestone" },
+}, 400);
+
+const recruitingObservation = await post({
+  operation: "commit_record",
+  recordType: "opportunity_observation",
+  parentId: recruitingOpportunity.id,
+  title: "Verification Ventures — Opportunity Observation",
+  payload: observationPayload,
+});
+
+await post({
+  operation: "commit_record",
+  recordType: "opportunity_observation",
+  parentId: recruitingOpportunity.id,
+  title: "Duplicate Opportunity Observation",
+  payload: observationPayload,
+}, 409);
+
+const outboundInteraction = {
+  opportunityId: recruitingOpportunity.id,
+  interactionKind: "Inquiry",
+  direction: "Outbound",
+  interactionState: "Sent",
+  occurredOn: todayInChicago,
+  timezone: "America/Chicago",
+  counterpartyRole: "Recruiter",
+  evidenceSummary: "A concise synthetic summary with no message or contact details.",
+  outcome: "Waiting",
+  nextAction: "Wait for a response.",
+  dueDate: tomorrowInChicago,
+  approvalConfirmed: false,
+  privateEvidenceConfirmed: true,
+};
+await post({
+  operation: "commit_record",
+  recordType: "recruiting_interaction",
+  parentId: recruitingOpportunity.id,
+  title: "Unapproved outbound interaction",
+  payload: outboundInteraction,
+}, 400);
+await post({
+  operation: "commit_record",
+  recordType: "recruiting_interaction",
+  parentId: recruitingOpportunity.id,
+  title: "Unapproved mutual sent interaction",
+  payload: { ...outboundInteraction, direction: "Mutual" },
+}, 400);
+
+const recruitingReferral = await post({
+  operation: "commit_record",
+  recordType: "recruiting_interaction",
+  parentId: recruitingOpportunity.id,
+  title: "Verification Ventures — Referral",
+  payload: {
+    ...outboundInteraction,
+    interactionKind: "Referral",
+    direction: "Inbound",
+    interactionState: "Received",
+    counterpartyRole: "Alumnus",
+    outcome: "Referral received and preserved.",
+  },
+});
+
+const secondRecruitingReferral = await post({
+  operation: "commit_record",
+  recordType: "recruiting_interaction",
+  parentId: recruitingOpportunity.id,
+  title: "Verification Ventures — Second material Referral observation",
+  payload: {
+    ...outboundInteraction,
+    interactionKind: "Referral",
+    direction: "Inbound",
+    interactionState: "Received",
+    counterpartyRole: "Alumnus",
+    evidenceSummary: "A second materially distinct same-day referral observation.",
+    outcome: "A second material referral detail was preserved without a key collision.",
+  },
+});
+
+const applicationPayload = {
+  opportunityId: recruitingOpportunity.id,
+  attemptedOn: todayInChicago,
+  timezone: "America/Chicago",
+  attemptState: "Submitted",
+  artifactChecklist: "Resume and synthetic work sample checked.",
+  claimLedger: "Every factual claim checked against preserved verification evidence.",
+  authorizationStatement: "No role authorization claimed.",
+  immigrationState: "Employer-compatible",
+  authorizationClaim: false,
+  confirmationReference: `synthetic-confirmation-${suffix}`,
+  approvalConfirmed: false,
+  nextAction: "Preserve the employer response.",
+  dueDate: tomorrowInChicago,
+};
+await post({
+  operation: "commit_record",
+  recordType: "application_attempt",
+  parentId: recruitingOpportunity.id,
+  title: "Unapproved Application Attempt",
+  payload: applicationPayload,
+}, 400);
+await post({
+  operation: "commit_record",
+  recordType: "application_attempt",
+  parentId: recruitingOpportunity.id,
+  title: "Application Attempt without confirmation",
+  payload: { ...applicationPayload, approvalConfirmed: true, confirmationReference: "No confirmation" },
+}, 400);
+
+const recruitingApplication = await post({
+  operation: "commit_record",
+  recordType: "application_attempt",
+  parentId: recruitingOpportunity.id,
+  title: "Verification Ventures — Application Attempt",
+  payload: { ...applicationPayload, approvalConfirmed: true },
+});
+
+const recruitingInterview = await post({
+  operation: "commit_record",
+  recordType: "recruiting_interaction",
+  parentId: recruitingOpportunity.id,
+  title: "Verification Ventures — Interview",
+  payload: {
+    ...outboundInteraction,
+    interactionKind: "Interview",
+    direction: "Mutual",
+    interactionState: "Completed",
+    counterpartyRole: "Investment partner",
+    outcome: "Completed synthetic interview evidence.",
+    approvalConfirmed: true,
+  },
+});
+
+const recruitingPractice = await post({
+  operation: "commit_record",
+  recordType: "interview_practice",
+  parentId: recruitingOpportunity.id,
+  title: "Verification Ventures — Interview Practice",
+  payload: {
+    opportunityId: recruitingOpportunity.id,
+    practicedOn: todayInChicago,
+    timezone: "America/Chicago",
+    practiceType: "Trend and company",
+    prompt: "Which technical change creates a non-consensus investment opportunity?",
+    independentAnswerSummary: "The synthetic first pass identifies a bottleneck and an investable response.",
+    evidenceUsed: "A locked Snapshot and Forecast supply the evidence trail.",
+    unsupportedClaim: "The market-size assertion still lacks a primary source.",
+    durationMinutes: 30,
+    nextRevision: "Replace the unsupported market-size assertion with first-party evidence.",
+  },
+});
+
+const recruitingPortfolio = await post({
+  operation: "commit_record",
+  recordType: "portfolio_candidate",
+  parentId: recruitingOpportunity.id,
+  title: "Verification Ventures — Portfolio Candidate",
+  payload: {
+    opportunityId: recruitingOpportunity.id,
+    sourceRecordId: snapshot.id,
+    capturedOn: todayInChicago,
+    timezone: "America/Chicago",
+    artifactType: "Snapshot",
+    title: "Verification Snapshot candidate",
+    evidenceOfOwnership: "The learner-authored Snapshot is preserved in this owner-scoped record.",
+    confidentialityReview: "Not cleared",
+    redactionsNeeded: "Remove synthetic internal identifiers before any recruiting use.",
+    publicationState: "Private candidate",
+    approvalConfirmed: false,
+    nextAction: "Conduct a separate confidentiality and recruiting-use review.",
+  },
+});
+
+await post({
+  operation: "commit_record",
+  recordType: "portfolio_candidate",
+  parentId: recruitingOpportunity.id,
+  title: "Mismatched Portfolio Candidate",
+  payload: {
+    opportunityId: recruitingOpportunity.id,
+    sourceRecordId: snapshot.id,
+    capturedOn: todayInChicago,
+    timezone: "America/Chicago",
+    artifactType: "Forecast",
+    title: "Mismatched artifact type",
+    evidenceOfOwnership: "The source exists, but the declared artifact type is intentionally wrong.",
+    confidentialityReview: "Not cleared",
+    redactionsNeeded: "No external use.",
+    publicationState: "Private candidate",
+    approvalConfirmed: false,
+    nextAction: "Reject the mismatched identity.",
+  },
+}, 400);
+
+await post({
+  operation: "append_event",
+  recordId: recruitingOpportunity.id,
+  eventType: "reflection",
+  eventData: { text: "Generic append must be rejected.", originalPreserved: true },
+}, 400);
+
 const final = await fetch(`${baseUrl}/api/lab`, { headers }).then((response) => response.json());
-assert.equal(final.records.length, 16);
+assert.equal(final.records.length, 24);
 assert.equal(final.events.length, 8);
 const lockedSourcingLead = final.records.find((record) => record.id === sourcingLead.id);
 assert.equal(lockedSourcingLead.payload.normalizedCompanyDomain, "verification.example.com");
@@ -800,5 +1086,14 @@ assert.equal(lockedForecast.payload.probability, 61);
 assert.equal(final.events.filter((event) => event.recordId === forecast.id).length, 2);
 const calibration = final.records.find((record) => record.recordType === "calibration_review");
 assert.equal(calibration.payload.brierScore, 0.1521);
+assert.equal(final.records.find((record) => record.id === recruitingOpportunity.id).payload.normalizedOfficialUrl, recruitingOpportunityPayload.officialUrl);
+assert.equal(final.records.find((record) => record.id === recruitingObservation.id).parentId, recruitingOpportunity.id);
+assert.equal(final.records.find((record) => record.id === recruitingReferral.id).payload.interactionState, "Received");
+assert.equal(final.records.find((record) => record.id === secondRecruitingReferral.id).payload.evidenceSummary, "A second materially distinct same-day referral observation.");
+assert.equal(final.records.find((record) => record.id === recruitingApplication.id).payload.approvalConfirmed, true);
+assert.equal(final.records.find((record) => record.id === recruitingInterview.id).payload.interactionState, "Completed");
+assert.equal(final.records.find((record) => record.id === recruitingPractice.id).payload.practiceType, "Trend and company");
+assert.equal(final.records.find((record) => record.id === recruitingPortfolio.id).payload.publicationState, "Private candidate");
+assert.equal(final.records.filter((record) => record.parentId === recruitingOpportunity.id).length, 7);
 
-console.log("API smoke passed: 16 immutable records, 8 append-only events, prospective experiment and forecast boundaries, typed correction overlays, sourcing attribution and funnel metrics, Founder Evidence safeguards, calibration scoring, and owner isolation intact.");
+console.log("API smoke passed: 24 immutable records, 8 append-only events, prospective experiment and forecast boundaries, typed sourcing and recruiting evidence, external-action approval gates, Founder Evidence safeguards, calibration scoring, and owner isolation intact.");

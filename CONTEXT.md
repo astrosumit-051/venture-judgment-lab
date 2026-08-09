@@ -32,6 +32,38 @@ _Avoid_: Qualifying Internship, résumé badge
 A paid Summer 2027 early-stage technology investing internship with direct exposure to sourcing, founder evaluation, diligence, and the investment team. Accelerator and emerging-manager investing roles can qualify; startup, consulting, and finance internships are fallback outcomes.
 _Avoid_: Any finance internship, any VC-adjacent internship
 
+**Recruiting Opportunity**:
+The immutable first record of one researched role, program, relationship-led target, or fallback, preserving its first-party source, observed status, classification, qualification reason, immigration evidence, and next action before later outcomes are known.
+_Avoid_: Mutable job row, prestige target, assumed opening
+
+**Opportunity Observation**:
+A dated append-only record of a material status, funnel-class, deadline, or immigration-evidence change for a Recruiting Opportunity. It can change the opportunity's effective current display without rewriting its original evidence.
+_Avoid_: Edited opportunity, unsourced status, activity update
+
+**Recruiting Interaction**:
+A dated, privacy-bounded record of observable relationship, referral, inquiry, follow-up, or interview evidence linked to one Recruiting Opportunity. It preserves a behavioral summary and outcome, not raw correspondence or contact details.
+_Avoid_: Contact database, message archive, networking points
+
+**Application Attempt**:
+A dated record of the artifacts, factual-claim check, authorization statement, approval state, and confirmation evidence for one application state. Submitted is an external-action claim and therefore requires explicit learner approval plus confirmation evidence.
+_Avoid_: Application draft counted as submitted, submission without approval
+
+**Interview Practice**:
+A dated Independent First Pass on a recruiting prompt that preserves the learner's answer, evidence used, unsupported claim or gap, and next revision before coaching.
+_Avoid_: Script memorization, polished answer without original attempt
+
+**Portfolio Candidate**:
+A private pointer from one Recruiting Opportunity to learner-owned Lab evidence being considered for recruiting use, with explicit ownership, confidentiality, redaction, and approval review. It never publishes the underlying Private Learning Record.
+_Avoid_: Automatic portfolio publication, copied work, raw private artifact
+
+**Immigration Evidence State**:
+The evidence ladder for one Recruiting Opportunity: Unknown, General eligibility, DSO-confirmed role fit, Employer-compatible, or Authorized. Only Authorized supports a claim that the learner may begin that particular role.
+_Avoid_: General CPT eligibility treated as role authorization, inferred work permission
+
+**Recruiting Funnel**:
+The count of distinct Qualified roles that progress through evidence-backed referral, submitted application, completed interview, and offer stages. Investing Milestones, activity volume, and firm prestige remain visible but outside the denominator.
+_Avoid_: Application score, outreach count, milestone inflation
+
 **Venture Judgment Lab**:
 The living apprenticeship and evidence record that runs until the Destination Event.
 _Avoid_: Course, content library

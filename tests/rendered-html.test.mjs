@@ -3,7 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("builds the complete Venture Judgment Lab learning surface", async () => {
-  const [layout, app, api, brief, practice, runtime, calibration, founder, sourcing, sourcingView] = await Promise.all([
+  const [layout, app, api, brief, practice, runtime, calibration, founder, sourcing, sourcingView, recruiting, recruitingView, recruitingRecord] = await Promise.all([
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/LabApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/lab/route.ts", import.meta.url), "utf8"),
@@ -14,6 +14,9 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
     readFile(new URL("../app/founderEvidence.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/sourcing.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/SourcingView.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/recruiting.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/RecruitingView.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../records/seven-month-internship-recruiting-sprint-2026-08-08.md", import.meta.url), "utf8"),
     access(new URL("../dist/server/index.js", import.meta.url)),
   ]);
 
@@ -53,6 +56,19 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(sourcingView, /Sourcing Progress/);
   assert.match(sourcingView, /Judge the hypothesis by its own funnel/);
   assert.match(sourcingView, /raw messages/);
+  assert.match(app, /RecruitingView/);
+  assert.match(recruiting, /recruiting_opportunity/);
+  assert.match(recruiting, /opportunity_observation/);
+  assert.match(recruiting, /recruiting_interaction/);
+  assert.match(recruiting, /application_attempt/);
+  assert.match(recruiting, /interview_practice/);
+  assert.match(recruiting, /portfolio_candidate/);
+  assert.match(recruiting, /Only the Authorized state may claim role authorization/);
+  assert.match(recruitingView, /Qualified roles/);
+  assert.match(recruitingView, /No prestige score\. No activity points\./);
+  assert.match(recruitingView, /It cannot contact a firm, submit an application, or publish an artifact/);
+  assert.match(recruitingRecord, /August 2026–February 2027 sequence/);
+  assert.match(recruitingRecord, /Unknown → General eligibility → DSO-confirmed role fit → Employer-compatible → Authorized/);
   assert.match(app, /Compare investment judgments with later evidence/);
   assert.match(app, /Open resolution source/);
   assert.match(app, /Open original source/);
@@ -88,6 +104,8 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(api, /Commit Calibration Reviews through the scoring workflow/);
   assert.match(runtime, /CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_events_unique_forecast_resolution/);
   assert.match(runtime, /idx_lab_records_unique_sourcing_domain/);
+  assert.match(runtime, /idx_lab_records_unique_recruiting_opportunity/);
+  assert.match(runtime, /idx_lab_records_unique_recruiting_child/);
   assert.match(calibration, /calculateBrierScore/);
   assert.match(calibration, /isCanonicalDate/);
   assert.match(calibration, /dateInTimeZone/);

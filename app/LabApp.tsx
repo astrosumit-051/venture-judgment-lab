@@ -11,9 +11,11 @@ import {
   type FounderSourceType,
 } from "./founderEvidence";
 import { SourcingView } from "./SourcingView";
+import { RecruitingView } from "./RecruitingView";
 import { applySourcingCorrections, currentSourcingStage, sourcingStageIndex } from "./sourcing";
+import { RECRUITING_RECORD_TYPES } from "./recruiting";
 
-type View = "today" | "brief" | "source" | "snapshot" | "forecast" | "map" | "founder" | "underwrite" | "calibrate" | "plan" | "history";
+type View = "today" | "brief" | "source" | "recruit" | "snapshot" | "forecast" | "map" | "founder" | "underwrite" | "calibrate" | "plan" | "history";
 
 type LabRecord = {
   id: string;
@@ -55,6 +57,7 @@ const navItems: Array<{ id: View; key: string; label: string; hint: string }> = 
   { id: "today", key: "T", label: "Today", hint: "The next judgment" },
   { id: "brief", key: "B", label: "Brief", hint: "Four real readings" },
   { id: "source", key: "D", label: "Source", hint: "Find before consensus" },
+  { id: "recruit", key: "R", label: "Recruit", hint: "Count real outcomes" },
   { id: "snapshot", key: "S", label: "Snapshot", hint: "Lock the first pass" },
   { id: "forecast", key: "F", label: "Forecast", hint: "Put odds on it" },
   { id: "map", key: "M", label: "2nd Order", hint: "Trace consequences" },
@@ -231,6 +234,12 @@ function recordLabel(type: string): string {
     founder_evidence_review: "Founder Evidence Review",
     sourcing_experiment: "Sourcing Experiment",
     sourcing_lead: "Sourcing Lead",
+    recruiting_opportunity: "Recruiting Opportunity",
+    opportunity_observation: "Opportunity Observation",
+    recruiting_interaction: "Recruiting Interaction",
+    application_attempt: "Application Attempt",
+    interview_practice: "Interview Practice",
+    portfolio_candidate: "Portfolio Candidate",
     weekly_underwrite: "Weekly Underwrite",
     weekly_plan: "Practice Plan",
     calibration_review: "Calibration Review",
@@ -259,6 +268,12 @@ function recordSummary(record: LabRecord): string {
   if (record.recordType === "founder_evidence_review") return textValue(record.payload, "provisionalJudgment");
   if (record.recordType === "sourcing_experiment") return textValue(record.payload, "hypothesis");
   if (record.recordType === "sourcing_lead") return textValue(record.payload, "qualificationThesis");
+  if (record.recordType === "recruiting_opportunity") return `${textValue(record.payload, "initialStatus")} · ${textValue(record.payload, "qualificationReason")}`;
+  if (record.recordType === "opportunity_observation") return `${textValue(record.payload, "status")} · ${textValue(record.payload, "materialChange")}`;
+  if (record.recordType === "recruiting_interaction") return `${textValue(record.payload, "interactionState")} · ${textValue(record.payload, "outcome")}`;
+  if (record.recordType === "application_attempt") return `${textValue(record.payload, "attemptState")} · ${textValue(record.payload, "nextAction")}`;
+  if (record.recordType === "interview_practice") return textValue(record.payload, "independentAnswerSummary");
+  if (record.recordType === "portfolio_candidate") return `${textValue(record.payload, "publicationState")} · ${textValue(record.payload, "nextAction")}`;
   if (record.recordType === "weekly_underwrite") return textValue(record.payload, "decisionDelta");
   if (record.recordType === "weekly_plan") return textValue(record.payload, "rationale");
   if (record.recordType === "calibration_review") return textValue(record.payload, "findings");
@@ -329,6 +344,37 @@ function keyEvidence(record: LabRecord): Array<[string, string]> {
     ["Fast qualification thesis", textValue(p, "qualificationThesis")],
     ["Fast disqualifier or gap", textValue(p, "disqualifier")],
     ["Original next action", `${textValue(p, "nextAction")} · ${textValue(p, "dueDate")}`],
+  ];
+  if (record.recordType === "recruiting_opportunity") return [
+    ["Classification", `${textValue(p, "opportunityClass")} · ${textValue(p, "funnelClass")}`],
+    ["Observed status", textValue(p, "initialStatus")],
+    ["Immigration evidence", `${textValue(p, "immigrationState")} · ${textValue(p, "immigrationEvidence")}`],
+    ["Original next action", `${textValue(p, "nextAction")} · ${textValue(p, "dueDate")}`],
+  ];
+  if (record.recordType === "opportunity_observation") return [
+    ["Status", `${textValue(p, "status")} · ${textValue(p, "funnelClass")}`],
+    ["Material change", textValue(p, "materialChange")],
+    ["Immigration evidence", `${textValue(p, "immigrationState")} · ${textValue(p, "immigrationEvidence")}`],
+  ];
+  if (record.recordType === "recruiting_interaction") return [
+    ["Interaction", `${textValue(p, "direction")} ${textValue(p, "interactionKind")} · ${textValue(p, "interactionState")}`],
+    ["Evidence", textValue(p, "evidenceSummary")],
+    ["Outcome", textValue(p, "outcome")],
+  ];
+  if (record.recordType === "application_attempt") return [
+    ["Attempt state", textValue(p, "attemptState")],
+    ["Claim ledger", textValue(p, "claimLedger")],
+    ["Authorization statement", textValue(p, "authorizationStatement")],
+  ];
+  if (record.recordType === "interview_practice") return [
+    ["Practice", `${textValue(p, "practiceType")} · ${numberValue(p, "durationMinutes")} minutes`],
+    ["Unsupported claim or gap", textValue(p, "unsupportedClaim")],
+    ["Next revision", textValue(p, "nextRevision")],
+  ];
+  if (record.recordType === "portfolio_candidate") return [
+    ["Candidate state", `${textValue(p, "artifactType")} · ${textValue(p, "publicationState")}`],
+    ["Ownership", textValue(p, "evidenceOfOwnership")],
+    ["Confidentiality", `${textValue(p, "confidentialityReview")} · ${textValue(p, "redactionsNeeded")}`],
   ];
   return [];
 }
@@ -850,6 +896,16 @@ export function LabApp({ displayName }: { displayName: string }) {
           />
         )}
 
+        {view === "recruit" && (
+          <RecruitingView
+            records={data.records}
+            timezone={dailyBrief.timezone}
+            busy={busy}
+            post={post}
+            announce={setNotice}
+          />
+        )}
+
         {view === "snapshot" && (
           <section className="view form-view">
             <div className="intro-row"><div><span className="eyebrow coral">Independent First Pass · 20-minute cap</span><h2>Commit before you know everything.</h2></div><p>A valid Snapshot makes the causal view, evidence, uncertainty, and confidence visible. It does not pretend to be complete.</p></div>
@@ -946,7 +1002,7 @@ export function LabApp({ displayName }: { displayName: string }) {
         {view === "history" && (
           <section className="view">
             <div className="intro-row"><div><span className="eyebrow coral">Private Learning Record</span><h2>Originals stay. Updates accumulate.</h2></div><p>Resolve Forecasts, record corrections, and add hindsight here. Nothing below edits the evidence you committed earlier.</p></div>
-            <div className="history-tools"><label>Show<select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value)}><option value="all">All records</option><option value="daily_brief">Daily Briefs</option><option value="sourcing_experiment">Sourcing Experiments</option><option value="sourcing_lead">Sourcing Leads</option><option value="snapshot_judgment">Snapshots</option><option value="forecast">Forecasts</option><option value="second_order_map">Second-Order Maps</option><option value="founder_evidence_review">Founder Evidence Reviews</option><option value="weekly_underwrite">Underwrites</option><option value="calibration_review">Calibration Reviews</option><option value="weekly_plan">Practice plans</option></select></label><span>{filteredRecords.length} immutable submission{filteredRecords.length === 1 ? "" : "s"}</span></div>
+            <div className="history-tools"><label>Show<select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value)}><option value="all">All records</option><option value="daily_brief">Daily Briefs</option><option value="sourcing_experiment">Sourcing Experiments</option><option value="sourcing_lead">Sourcing Leads</option><option value="recruiting_opportunity">Recruiting Opportunities</option><option value="opportunity_observation">Opportunity Observations</option><option value="recruiting_interaction">Recruiting Interactions</option><option value="application_attempt">Application Attempts</option><option value="interview_practice">Interview Practice</option><option value="portfolio_candidate">Portfolio Candidates</option><option value="snapshot_judgment">Snapshots</option><option value="forecast">Forecasts</option><option value="second_order_map">Second-Order Maps</option><option value="founder_evidence_review">Founder Evidence Reviews</option><option value="weekly_underwrite">Underwrites</option><option value="calibration_review">Calibration Reviews</option><option value="weekly_plan">Practice plans</option></select></label><span>{filteredRecords.length} immutable submission{filteredRecords.length === 1 ? "" : "s"}</span></div>
             <div className="history-layout">
               <div className="timeline">
                 {loading && <div className="empty-history"><p>Opening your private record…</p></div>}
@@ -958,7 +1014,7 @@ export function LabApp({ displayName }: { displayName: string }) {
                   return <article className="timeline-record" key={record.id}><span className="timeline-dot" /><div className="record-head"><span>{recordLabel(record.recordType)}</span><time>{formatTime(record.committedAt)}</time></div><h3>{record.title}</h3><p>{recordSummary(record)}</p>{founderSource.startsWith("http") && <a className="history-source-link" href={founderSource} target="_blank" rel="noreferrer">Open Founder Evidence source ↗</a>}{childReadings.length > 0 && <div className="reading-archive">{childReadings.map((reading) => <a key={reading.id} href={textValue(reading.payload, "canonicalUrl")} target="_blank" rel="noreferrer"><span>{textValue(reading.payload, "lane")}</span><strong>{reading.title}</strong><small>{textValue(reading.payload, "learnerResponse")}</small></a>)}</div>}{keyEvidence(record).length > 0 && <details className="evidence-details"><summary>Inspect committed evidence</summary>{keyEvidence(record).map(([label, value]) => <div key={label}><strong>{label}</strong><p>{value}</p></div>)}</details>}{events.map((event) => { const resolutionSource = textValue(event.eventData, "resolutionSource"); const reviewId = textValue(event.eventData, "calibrationReviewId"); const linkedReview = reviewId ? data.records.find((item) => item.id === reviewId) : undefined; return <div className="event" key={event.id}><span>{eventLabel(event.eventType)}</span><time>{formatTime(event.occurredAt)}</time><p>{textValue(event.eventData, "text")}</p>{(resolutionSource || linkedReview) && <div className="event-links">{resolutionSource && <a href={resolutionSource} target="_blank" rel="noreferrer">Open resolution source ↗</a>}{linkedReview && <span>Recorded in {linkedReview.title}</span>}</div>}</div>; })}</article>;
                 })}
               </div>
-              <aside className="append-card"><span className="eyebrow coral">Append, never overwrite</span><h3>Add later evidence</h3><p>Use this for reflection, correction, source status, coaching, or later usefulness. Resolve Forecasts through Calibration and advance Sourcing Leads through the staged sourcing workflow.</p><form onSubmit={appendUpdate}><label>Original record<select required value={updateRecord} onChange={(e) => { setUpdateRecord(e.target.value); setUpdatePrivateEvidenceConfirmed(false); }}><option value="">Choose a record…</option>{data.records.filter((record) => record.recordType !== "sourcing_lead").map((record) => <option key={record.id} value={record.id}>{recordLabel(record.recordType)} · {record.title}</option>)}</select></label><label>Update type<select value={updateType} onChange={(e) => setUpdateType(e.target.value)}><option value="reflection">Reflection</option><option value="coach_feedback">Coach feedback</option><option value="later_usefulness">Later usefulness</option><option value="source_status">Source status</option><option value="metadata_correction">Metadata correction</option><option value="missed_practice">Missed practice</option></select></label><label>Dated update<textarea required rows={5} value={updateText} onChange={(e) => setUpdateText(e.target.value)} placeholder="State the new evidence, source, outcome, or correction. Do not restate history as if you knew it earlier." /></label>{selectedUpdateRecord?.recordType === "founder_evidence_review" && <label className="privacy-confirmation"><input required type="checkbox" checked={updatePrivateEvidenceConfirmed} onChange={(e) => setUpdatePrivateEvidenceConfirmed(e.target.checked)} />I confirm this update contains only consented behavioral evidence and omits raw transcripts, ratings, and confidential details.</label>}<button className="primary" disabled={busy}>{busy ? "Appending…" : "Append update"}</button></form></aside>
+              <aside className="append-card"><span className="eyebrow coral">Append, never overwrite</span><h3>Add later evidence</h3><p>Use this for reflection, correction, source status, coaching, or later usefulness. Resolve Forecasts through Calibration; advance Sourcing and Recruiting through their typed workspaces.</p><form onSubmit={appendUpdate}><label>Original record<select required value={updateRecord} onChange={(e) => { setUpdateRecord(e.target.value); setUpdatePrivateEvidenceConfirmed(false); }}><option value="">Choose a record…</option>{data.records.filter((record) => record.recordType !== "sourcing_lead" && !(RECRUITING_RECORD_TYPES as readonly string[]).includes(record.recordType)).map((record) => <option key={record.id} value={record.id}>{recordLabel(record.recordType)} · {record.title}</option>)}</select></label><label>Update type<select value={updateType} onChange={(e) => setUpdateType(e.target.value)}><option value="reflection">Reflection</option><option value="coach_feedback">Coach feedback</option><option value="later_usefulness">Later usefulness</option><option value="source_status">Source status</option><option value="metadata_correction">Metadata correction</option><option value="missed_practice">Missed practice</option></select></label><label>Dated update<textarea required rows={5} value={updateText} onChange={(e) => setUpdateText(e.target.value)} placeholder="State the new evidence, source, outcome, or correction. Do not restate history as if you knew it earlier." /></label>{selectedUpdateRecord?.recordType === "founder_evidence_review" && <label className="privacy-confirmation"><input required type="checkbox" checked={updatePrivateEvidenceConfirmed} onChange={(e) => setUpdatePrivateEvidenceConfirmed(e.target.checked)} />I confirm this update contains only consented behavioral evidence and omits raw transcripts, ratings, and confidential details.</label>}<button className="primary" disabled={busy}>{busy ? "Appending…" : "Append update"}</button></form></aside>
             </div>
           </section>
         )}

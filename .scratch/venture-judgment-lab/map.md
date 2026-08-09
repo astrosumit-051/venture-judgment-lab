@@ -27,6 +27,7 @@ A private, dynamic, evidence-preserving apprenticeship is operating through Site
 - [Design Forecast and Second-Order Map practice](issues/07-design-forecasting-and-second-order-practice.md) — Preserve immutable probabilistic Forecasts, trace explicit first-, second-, and third-order consequences, and use atomic Monthly Calibration Reviews to resolve outcomes, calculate Brier scores, diagnose mistakes, and change future decision rules.
 - [Design Founder Evidence training](issues/08-design-founder-judgment-training.md) — Use immutable Founder Evidence Reviews for public and private encounters, separate observed behavior from inference across six dimensions, preserve gaps and counterevidence, reject founder scoring, and link only exact same-Snapshot reviews into Underwrites.
 - [Design the sourcing mastery system](issues/09-design-sourcing-mastery-system.md) — Commit falsifiable discovery experiments and domain-unique, honestly attributed leads, then append bounded funnel, relationship, rediscovery, and typed effective correction evidence; only qualified leads enter the Snapshot-to-Underwrite conversion path.
+- [Design the seven-month internship recruiting sprint](issues/11-design-internship-recruiting-sprint.md) — Operate an August 2026–February 2027 private recruiting workspace with six immutable evidence records, evidence-backed reclassification, real cumulative funnel denominators, exact immigration-state claims, approval-gated external actions, and substitution-based fallbacks.
 
 ## Not yet specified
 

@@ -280,6 +280,26 @@ legend span { margin-right: 12px; color: var(--coral-dark); font-size: 11px; }
 .sourcing-card-head > span { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--coral-dark); border-radius: 50%; color: var(--coral-dark); font-family: Georgia, serif; font-size: 11px; }
 .sourcing-card-head small { color: #7b857f; font-size: 8px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
 .sourcing-card-head h3 { margin: 2px 0 0; font-family: Georgia, serif; font-size: 21px; font-weight: 400; }
+.recruiting-metrics { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; margin-bottom: 14px; border: 1px solid var(--line); background: var(--line); }
+.recruiting-metrics article { min-height: 124px; padding: 20px; background: var(--cream); }
+.recruiting-metrics span, .recruiting-metrics small, .recruiting-metrics strong { display: block; }
+.recruiting-metrics span { color: #758078; font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+.recruiting-metrics strong { margin: 11px 0 5px; font-family: Georgia, serif; font-size: 33px; font-weight: 400; }
+.recruiting-metrics small { color: #7a847e; font-size: 9px; line-height: 1.45; }
+.recruiting-ledger, .verified-targets { margin-bottom: 22px; }
+.recruiting-ledger > article { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 0.75fr); gap: 24px; padding: 19px 22px; border: 1px solid var(--line); border-bottom: 0; background: var(--cream); }
+.recruiting-ledger > article:last-child { border-bottom: 1px solid var(--line); }
+.recruiting-ledger h4, .verified-targets h4 { margin: 6px 0; font-family: Georgia, serif; font-size: 20px; font-weight: 400; }
+.recruiting-ledger p, .verified-targets p { margin: 4px 0; color: #59685f; font-size: 10px; line-height: 1.5; }
+.recruiting-ledger article > div:last-child { padding-left: 20px; border-left: 1px solid #d7cebf; }
+.recruiting-ledger small, .verified-targets small { color: #7a847e; font-size: 9px; }
+.target-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.target-grid article { display: grid; align-content: start; gap: 7px; min-height: 238px; padding: 20px; border: 1px solid var(--line); background: #e9e2d4; }
+.target-grid a { color: var(--coral-dark); font-size: 9px; font-weight: 700; text-decoration: none; }
+.target-grid button { align-self: end; margin-top: auto; }
+.recruiting-workbench { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.recruiting-card { display: grid; gap: 14px; padding: 22px; border: 1px solid var(--line); background: var(--cream); }
+.boundary-note { margin: 0; padding: 13px 15px; border-left: 3px solid var(--gold); background: #f0ebdf; color: #59685f; font-size: 10px; line-height: 1.55; }
 .sourcing-leads { margin-top: 18px; }
 .sourcing-lead-row { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 24px; padding: 19px 22px; border: 1px solid var(--line); border-bottom: 0; background: var(--cream); }
 .sourcing-lead-row:last-child { border-bottom: 1px solid var(--line); }
@@ -363,6 +383,7 @@ legend span { margin-right: 12px; color: var(--coral-dark); font-size: 11px; }
   .history-layout { grid-template-columns: 1fr; }
   .append-card { position: static; }
   .sourcing-workbench { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .target-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 760px) {
@@ -403,7 +424,10 @@ legend span { margin-right: 12px; color: var(--coral-dark); font-size: 11px; }
   .resolution-fields, .score-card, .judgment-choice-list { grid-template-columns: 1fr; padding-left: 0; }
   .founder-dimension-grid { grid-template-columns: 1fr; }
   .sourcing-metrics { grid-template-columns: repeat(2, 1fr); }
+  .recruiting-metrics { grid-template-columns: repeat(2, 1fr); }
   .sourcing-cohorts, .sourcing-workbench { grid-template-columns: 1fr; }
+  .recruiting-workbench, .target-grid, .recruiting-ledger > article { grid-template-columns: 1fr; }
+  .recruiting-ledger article > div:last-child { padding-top: 12px; padding-left: 0; border-top: 1px solid #d7cebf; border-left: 0; }
   .experiment-results > article { grid-template-columns: 1fr; }
   .experiment-numbers { grid-template-columns: repeat(3, 1fr); }
   .cohort-head { display: grid; }

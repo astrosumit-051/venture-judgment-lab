@@ -9,6 +9,16 @@ import {
 import { ensureLabSchema } from "@/db/runtime";
 import { FOUNDER_DIMENSIONS, FOUNDER_SOURCE_TYPES } from "@/app/founderEvidence";
 import {
+  normalizeRecruitingUrl,
+  expectedRecruitingFunnelClass,
+  portfolioArtifactTypeForRecord,
+  PORTFOLIO_SOURCE_RECORD_TYPES,
+  RECRUITING_CHILD_RECORD_TYPES,
+  RECRUITING_RECORD_TYPES,
+  recruitingRecordKey,
+  validateRecruitingPayload,
+} from "@/app/recruiting";
+import {
   applySourcingCorrections,
   isConsistentSourcingAttribution,
   OUTREACH_CHANNELS,
@@ -151,6 +161,13 @@ function normalizedDomain(value: unknown): string {
 }
 
 function validatePayload(recordType: string, payload: Record<string, unknown>): string | null {
+  if ((RECRUITING_RECORD_TYPES as readonly string[]).includes(recordType)) {
+    const timezone = cleanText(payload.timezone, 100);
+    const today = isValidTimeZone(timezone)
+      ? dateInTimeZone(new Date(), timezone)
+      : new Date().toISOString().slice(0, 10);
+    return validateRecruitingPayload(recordType, payload, today);
+  }
   const required = recordRequirements[recordType];
   if (!required) return "Unsupported record type.";
   const missing = required.filter((key) => !hasValue(payload[key]));
@@ -890,8 +907,28 @@ export async function POST(request: Request) {
         discoveredAt: new Date().toISOString(),
       };
     }
+    if (recordType === "recruiting_opportunity") {
+      payload = {
+        ...payload,
+        normalizedOfficialUrl: normalizeRecruitingUrl(payload.officialUrl),
+      };
+    }
+    if ((RECRUITING_RECORD_TYPES as readonly string[]).includes(recordType)) {
+      payload = {
+        ...payload,
+        recordKey: recruitingRecordKey(recordType, payload),
+      };
+    }
     const invalid = validatePayload(recordType, payload);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
+
+    const isRecruitingChild = (RECRUITING_CHILD_RECORD_TYPES as readonly string[]).includes(recordType);
+    if (recordType === "recruiting_opportunity" && parentId) {
+      return Response.json({ error: "A Recruiting Opportunity is a top-level immutable record." }, { status: 400 });
+    }
+    if (isRecruitingChild && !parentId) {
+      return Response.json({ error: "Recruiting evidence must link to its Recruiting Opportunity." }, { status: 400 });
+    }
 
     if (parentId) {
       const parent = await db
@@ -901,6 +938,50 @@ export async function POST(request: Request) {
       if (!parent) return Response.json({ error: "The linked record was not found." }, { status: 404 });
       if (new Set(["founder_evidence_review", "weekly_underwrite"]).has(recordType) && parent.record_type !== "snapshot_judgment") {
         return Response.json({ error: "Founder Evidence Reviews and Underwrites must link to a Snapshot Judgment." }, { status: 400 });
+      }
+      if (isRecruitingChild) {
+        if (parent.record_type !== "recruiting_opportunity" || cleanText(payload.opportunityId, 80) !== parentId) {
+          return Response.json({ error: "Recruiting evidence can link only to its declared Recruiting Opportunity." }, { status: 400 });
+        }
+        const opportunityPayload = parseJson(parent.payload_json);
+        if (cleanText(opportunityPayload.timezone, 100) !== cleanText(payload.timezone, 100)) {
+          return Response.json({ error: "Recruiting evidence must preserve the linked opportunity's timezone." }, { status: 400 });
+        }
+        const childDateKeys: Record<string, string> = {
+          opportunity_observation: "observedOn",
+          recruiting_interaction: "occurredOn",
+          application_attempt: "attemptedOn",
+          interview_practice: "practicedOn",
+          portfolio_candidate: "capturedOn",
+        };
+        const childDate = cleanText(payload[childDateKeys[recordType]], 20);
+        if (childDate < cleanText(opportunityPayload.discoveredOn, 20)) {
+          return Response.json({ error: "Recruiting evidence cannot predate its opportunity's preserved discovery." }, { status: 400 });
+        }
+        if (recordType === "opportunity_observation") {
+          const expectedFunnelClass = expectedRecruitingFunnelClass(cleanText(payload.opportunityClass, 100));
+          const observedFunnelClass = cleanText(payload.funnelClass, 100);
+          if (observedFunnelClass !== expectedFunnelClass && observedFunnelClass !== "Archived") {
+            return Response.json({ error: "An Opportunity Observation must preserve an evidence-backed class and its matching funnel, or archive it." }, { status: 400 });
+          }
+        }
+        if (recordType === "application_attempt") {
+          const latestObservation = await db
+            .prepare(
+              `SELECT payload_json FROM lab_records
+               WHERE owner_id = ? AND parent_id = ? AND record_type = 'opportunity_observation'
+               AND json_extract(payload_json, '$.observedOn') <= ?
+               ORDER BY json_extract(payload_json, '$.observedOn') DESC, committed_at DESC LIMIT 1`,
+            )
+            .bind(owner, parentId, childDate)
+            .first<{ payload_json: string }>();
+          const effectiveImmigrationState = latestObservation
+            ? cleanText(parseJson(latestObservation.payload_json).immigrationState, 100)
+            : cleanText(opportunityPayload.immigrationState, 100);
+          if (cleanText(payload.immigrationState, 100) !== effectiveImmigrationState) {
+            return Response.json({ error: "An Application Attempt must preserve the opportunity's effective Immigration Evidence State." }, { status: 400 });
+          }
+        }
       }
       if (recordType === "sourcing_lead") {
         if (parent.record_type !== "sourcing_experiment" || cleanText(payload.experimentId, 80) !== parentId) {
@@ -997,6 +1078,19 @@ export async function POST(request: Request) {
         .first<{ id: string }>();
       if (!experiment) return Response.json({ error: "The active Sourcing Experiment was not found in your private record." }, { status: 404 });
     }
+    if (recordType === "portfolio_candidate") {
+      const allowedArtifactTypes = new Set(PORTFOLIO_SOURCE_RECORD_TYPES as readonly string[]);
+      const artifact = await db
+        .prepare("SELECT id, record_type FROM lab_records WHERE id = ? AND owner_id = ?")
+        .bind(cleanText(payload.sourceRecordId, 80), owner)
+        .first<{ id: string; record_type: string }>();
+      if (!artifact || !allowedArtifactTypes.has(artifact.record_type)) {
+        return Response.json({ error: "A Portfolio Candidate must link to an eligible artifact in your private record." }, { status: 404 });
+      }
+      if (cleanText(payload.artifactType, 100) !== portfolioArtifactTypeForRecord(artifact.record_type)) {
+        return Response.json({ error: "A Portfolio Candidate's artifact type must match its linked private record." }, { status: 400 });
+      }
+    }
     if (recordType === "sourcing_lead") {
       const duplicate = await db.prepare(
         `SELECT id FROM lab_records
@@ -1004,6 +1098,22 @@ export async function POST(request: Request) {
          AND json_extract(payload_json, '$.normalizedCompanyDomain') = ? LIMIT 1`,
       ).bind(owner, cleanText(payload.normalizedCompanyDomain, 255)).first<{ id: string }>();
       if (duplicate) return Response.json({ error: "This company already has a Sourcing Lead; append new channel or relationship evidence instead." }, { status: 409 });
+    }
+    if (recordType === "recruiting_opportunity") {
+      const duplicate = await db.prepare(
+        `SELECT id FROM lab_records
+         WHERE owner_id = ? AND record_type = 'recruiting_opportunity'
+         AND json_extract(payload_json, '$.normalizedOfficialUrl') = ? LIMIT 1`,
+      ).bind(owner, cleanText(payload.normalizedOfficialUrl, 2000)).first<{ id: string }>();
+      if (duplicate) return Response.json({ error: "This Recruiting Opportunity already exists; add a dated Opportunity Observation instead." }, { status: 409 });
+    }
+    if (isRecruitingChild) {
+      const duplicate = await db.prepare(
+        `SELECT id FROM lab_records
+         WHERE owner_id = ? AND record_type = ? AND parent_id = ?
+         AND json_extract(payload_json, '$.recordKey') = ? LIMIT 1`,
+      ).bind(owner, recordType, parentId, cleanText(payload.recordKey, 5000)).first<{ id: string }>();
+      if (duplicate) return Response.json({ error: "This dated Recruiting evidence is already preserved for the opportunity." }, { status: 409 });
     }
 
     const id = crypto.randomUUID();
@@ -1013,6 +1123,9 @@ export async function POST(request: Request) {
     } catch (error) {
       if (recordType === "sourcing_lead" && error instanceof Error && error.message.toLowerCase().includes("unique")) {
         return Response.json({ error: "This company already has a Sourcing Lead; append new channel or relationship evidence instead." }, { status: 409 });
+      }
+      if ((RECRUITING_RECORD_TYPES as readonly string[]).includes(recordType) && error instanceof Error && error.message.toLowerCase().includes("unique")) {
+        return Response.json({ error: "This Recruiting evidence already exists; preserve only a materially new dated observation." }, { status: 409 });
       }
       throw error;
     }
@@ -1033,6 +1146,9 @@ export async function POST(request: Request) {
     if (!parent) return Response.json({ error: "The record was not found." }, { status: 404 });
     if (parent.record_type === "sourcing_lead") {
       return Response.json({ error: "Append Sourcing Lead evidence through the staged sourcing workflow so funnel integrity is preserved." }, { status: 400 });
+    }
+    if ((RECRUITING_RECORD_TYPES as readonly string[]).includes(parent.record_type)) {
+      return Response.json({ error: "Append Recruiting evidence through the typed Recruiting workspace so dates, approvals, and funnel integrity are preserved." }, { status: 400 });
     }
     if (parent.record_type === "founder_evidence_review") {
       const allowedFounderEventKeys = new Set(["text", "originalPreserved", "privateEvidenceConfirmed"]);
