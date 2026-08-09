@@ -144,6 +144,14 @@ _Avoid_: Network strength score, prestige proxy, meeting count
 An end-to-end, question-led analysis of one early-stage company that investigates three Load-Bearing Questions, integrates traceable supporting and disconfirming evidence, and appends a deeper Practice Disposition and Decision Delta without rewriting the original Snapshot Judgment.
 _Avoid_: Weekend book report, checklist review
 
+**Diligence Case**:
+A sequenced deepening of one locked Snapshot Judgment and Weekly Underwrite through customer and market evidence, technical and product assessment, business-model and economic analysis, an Anti-Memo, a full investment memo, and oral defense. Each stage preserves its sources, limitations, disconfirmation, inference, next evidence, and Decision Delta before the next stage begins.
+_Avoid_: Research folder, rewritten Underwrite, diligence checklist
+
+**Anti-Memo**:
+The strongest causal non-investment case in a Diligence Case, stating the failure mechanism, leading failure indicators, and evidence that would reverse the non-investment view before the full investment memo is written.
+_Avoid_: Token risks section, weak devil's advocate, predetermined rejection
+
 **Practice Disposition**:
 A decision about the next use of scarce Lab attention: Pursue for immediate diligence or relationship work, Watch for a named uncertainty or trigger, or Pass until a stated condition changes. It is not a simulated investment-committee vote or a prediction that the company succeeds or fails.
 _Avoid_: Startup grade, investment recommendation
@@ -157,7 +165,7 @@ The claim-linked record separating observations, sources, source roles, dates, r
 _Avoid_: Link dump, undifferentiated research notes
 
 **Decision Delta**:
-The dated explanation of what a deeper Underwrite retained, changed, or reversed from the original Snapshot Judgment and which evidence caused the update.
+The dated explanation of what a deeper evidence stage retained, changed, or reversed from its locked prior judgment and which evidence caused the update. An Underwrite compares with its Snapshot Judgment; each later Diligence Case stage compares with the committed evidence before it.
 _Avoid_: Rewritten first impression, unexplained confidence change
 
 **Calibration Review**:

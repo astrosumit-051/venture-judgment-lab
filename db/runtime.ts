@@ -71,6 +71,12 @@ export async function ensureLabSchema(): Promise<D1Database> {
     db.prepare(
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_automation_registration ON lab_records(json_extract(payload_json, '$.tokenFingerprint')) WHERE record_type = 'opportunity_monitor_registration'",
     ),
+    db.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_diligence_case ON lab_records(owner_id, json_extract(payload_json, '$.caseKey')) WHERE record_type = 'diligence_case'",
+    ),
+    db.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_diligence_stage ON lab_records(owner_id, parent_id, json_extract(payload_json, '$.stageKey')) WHERE record_type = 'diligence_stage'",
+    ),
     db.prepare("PRAGMA optimize"),
   ]);
   return db;

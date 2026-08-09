@@ -39,6 +39,12 @@ export const labRecords = sqliteTable(
     uniqueIndex("idx_lab_records_unique_automation_registration")
       .on(sql`json_extract(${table.payloadJson}, '$.tokenFingerprint')`)
       .where(sql`${table.recordType} = 'opportunity_monitor_registration'`),
+    uniqueIndex("idx_lab_records_unique_diligence_case")
+      .on(table.ownerId, sql`json_extract(${table.payloadJson}, '$.caseKey')`)
+      .where(sql`${table.recordType} = 'diligence_case'`),
+    uniqueIndex("idx_lab_records_unique_diligence_stage")
+      .on(table.ownerId, table.parentId, sql`json_extract(${table.payloadJson}, '$.stageKey')`)
+      .where(sql`${table.recordType} = 'diligence_stage'`),
   ],
 );
 

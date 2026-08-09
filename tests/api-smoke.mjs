@@ -744,6 +744,178 @@ const underwrite = await post({
 });
 
 await post({
+  operation: "commit_record",
+  recordType: "diligence_case",
+  parentId: underwrite.id,
+  title: "Invalid cross-Snapshot Diligence Case",
+  payload: {
+    snapshotId: otherSnapshot.id,
+    underwriteId: underwrite.id,
+    company: "Other Verification Co",
+    openedOn: todayInChicago,
+    timezone: "America/Chicago",
+  },
+}, 400);
+
+const diligenceCase = await post({
+  operation: "commit_record",
+  recordType: "diligence_case",
+  parentId: underwrite.id,
+  title: "Verification Systems — Diligence Case",
+  payload: {
+    snapshotId: snapshot.id,
+    underwriteId: underwrite.id,
+    company: "Verification Systems",
+    openedOn: todayInChicago,
+    timezone: "America/Chicago",
+  },
+});
+
+await post({
+  operation: "commit_record",
+  recordType: "diligence_case",
+  parentId: underwrite.id,
+  title: "Duplicate Diligence Case",
+  payload: {
+    snapshotId: snapshot.id,
+    underwriteId: underwrite.id,
+    company: "Verification Systems",
+    openedOn: todayInChicago,
+    timezone: "America/Chicago",
+  },
+}, 409);
+
+await post({
+  operation: "append_event",
+  recordId: diligenceCase.id,
+  eventType: "reflection",
+  eventData: { text: "Generic updates must not bypass the typed Diligence sequence.", originalPreserved: true },
+}, 400);
+
+const diligenceBase = (stageKey, specific) => ({
+  caseId: diligenceCase.id,
+  stageKey,
+  committedOn: todayInChicago,
+  timezone: "America/Chicago",
+  sources: [{
+    sourceType: "Public source",
+    sourceReference: `https://example.com/diligence/${stageKey}`,
+    observation: `Synthetic observable evidence for ${stageKey}.`,
+    reliabilityLimits: "Synthetic smoke-test evidence from one source.",
+  }],
+  limitations: "One synthetic source cannot establish a general conclusion.",
+  disconfirmingEvidence: "The synthetic evidence may fail outside this verification case.",
+  inference: "The current conclusion remains bounded and provisional.",
+  nextEvidence: "Obtain an independent source for the next load-bearing claim.",
+  decisionDelta: "The new evidence narrowed one uncertainty without rewriting the prior stage.",
+  privacyConfirmed: true,
+  ...specific,
+});
+
+const antiMemoPayload = diligenceBase("anti_memo", {
+  nonInvestmentCase: "The product fails to become a durable system of record.",
+  failureMechanism: "Generic substitutes erase switching costs before enterprise adoption compounds.",
+  leadingFailureIndicators: "Retention remains flat and workflow data does not accumulate.",
+  reversalEvidence: "Independent retention cohorts show compounding workflow value.",
+});
+
+await post({
+  operation: "commit_record",
+  recordType: "diligence_stage",
+  parentId: diligenceCase.id,
+  title: "Skipped Anti-Memo",
+  payload: antiMemoPayload,
+}, 400);
+
+const foundationPayload = diligenceBase("foundation", {
+  foundationSummary: "The case starts from the locked Snapshot and Weekly Underwrite.",
+  snapshotCrux: "Can workflow evidence support durable customer pull?",
+  underwriteDecision: "Watch while the customer and durability evidence remains narrow.",
+});
+await post({
+  operation: "commit_record",
+  recordType: "diligence_stage",
+  parentId: diligenceCase.id,
+  title: "Unconfirmed Diligence foundation",
+  payload: { ...foundationPayload, privacyConfirmed: false },
+}, 400);
+const foundationStage = await post({ operation: "commit_record", recordType: "diligence_stage", parentId: diligenceCase.id, title: "Verification Systems — Foundation", payload: foundationPayload });
+await post({ operation: "commit_record", recordType: "diligence_stage", parentId: diligenceCase.id, title: "Duplicate foundation", payload: foundationPayload }, 409);
+
+const customerStage = await post({
+  operation: "commit_record",
+  recordType: "diligence_stage",
+  parentId: diligenceCase.id,
+  title: "Verification Systems — Customer and market evidence",
+  payload: diligenceBase("customer_market", {
+    customerEvidence: "A synthetic design partner repeated the workflow in two test periods.",
+    marketEvidence: "The workflow occurs across a bounded segment with a plausible expansion mechanism.",
+    customerUnknowns: "Willingness to pay and retention remain unverified outside the design partner.",
+  }),
+});
+
+await post({
+  operation: "commit_record",
+  recordType: "diligence_stage",
+  parentId: diligenceCase.id,
+  title: "Skipped full memo",
+  payload: diligenceBase("full_memo", {
+    recommendation: "Watch",
+    investmentMemo: "A complete memo cannot precede technical and economic evidence.",
+    remainingDissent: "The required intermediate stages are absent.",
+  }),
+}, 400);
+
+const technicalStage = await post({
+  operation: "commit_record",
+  recordType: "diligence_stage",
+  parentId: diligenceCase.id,
+  title: "Verification Systems — Technical and product assessment",
+  payload: diligenceBase("technical_product", {
+    productAssessment: "The synthetic workflow completes the claimed product action.",
+    technicalAssessment: "The test exposes integration and data-quality constraints.",
+    defensibility: "Durability depends on proprietary workflow evidence, not the generic model layer.",
+  }),
+});
+const economicsStage = await post({
+  operation: "commit_record",
+  recordType: "diligence_stage",
+  parentId: diligenceCase.id,
+  title: "Verification Systems — Business model and economic analysis",
+  payload: diligenceBase("business_economics", {
+    businessModel: "Enterprise subscriptions capture value from repeated workflow use.",
+    economicAnalysis: "Contribution depends on deployment cost falling across customer cohorts.",
+    scalingConstraint: "Integration labor may grow linearly with customer count.",
+  }),
+});
+await post({ operation: "commit_record", recordType: "diligence_stage", parentId: diligenceCase.id, title: "Incomplete Anti-Memo", payload: { ...antiMemoPayload, reversalEvidence: "" } }, 400);
+const antiMemoStage = await post({ operation: "commit_record", recordType: "diligence_stage", parentId: diligenceCase.id, title: "Verification Systems — Anti-Memo", payload: antiMemoPayload });
+
+const memoBase = diligenceBase("full_memo", {
+  recommendation: "Watch",
+  investmentMemo: "The synthetic evidence supports continued diligence but not a resolved investment view. Customer repetition is promising while retention, integration economics, and defensibility remain load-bearing.",
+  remainingDissent: "The Anti-Memo remains credible until independent retention and integration-cost evidence arrives.",
+});
+await post({ operation: "commit_record", recordType: "diligence_stage", parentId: diligenceCase.id, title: "Invalid recommendation memo", payload: { ...memoBase, recommendation: "Invest" } }, 400);
+const memoStage = await post({ operation: "commit_record", recordType: "diligence_stage", parentId: diligenceCase.id, title: "Verification Systems — Full investment memo", payload: memoBase });
+
+const oralBase = diligenceBase("oral_defense", {
+  timedQuestions: Array.from({ length: 3 }, (_, index) => ({
+    question: `What evidence supports claim ${index + 1}?`,
+    secondsAllowed: 90,
+    answerSummary: "The learner defended the claim from the committed source and named its limit.",
+    concession: "The evidence remains synthetic and needs independent corroboration.",
+  })),
+  changedJudgment: "Confidence fell because the defense exposed narrow customer evidence.",
+  unresolvedIssues: "Independent retention and integration-cost evidence remain missing.",
+  simulatedIcDecision: "Watch and authorize one bounded evidence request; no real investment decision is claimed.",
+});
+await post({ operation: "commit_record", recordType: "diligence_stage", parentId: diligenceCase.id, title: "Short oral defense", payload: { ...oralBase, timedQuestions: oralBase.timedQuestions.slice(0, 2) } }, 400);
+const oralStage = await post({ operation: "commit_record", recordType: "diligence_stage", parentId: diligenceCase.id, title: "Verification Systems — Oral defense", payload: oralBase });
+await post({ operation: "commit_record", recordType: "diligence_stage", parentId: diligenceCase.id, title: "Stage after completion", payload: oralBase }, 409);
+await post({ operation: "append_event", recordId: oralStage.id, eventType: "reflection", eventData: { text: "Generic mutation is not a stage.", originalPreserved: true } }, 400);
+
+await post({
   operation: "append_event",
   recordId: forecast.id,
   eventType: "reflection",
@@ -1216,7 +1388,7 @@ assert.equal(currentMonitorState.monitorHealth.missedScheduledRun, false);
 assert.equal(currentMonitorState.opportunities.find((opportunity) => opportunity.officialUrl.includes("4633431005")).status, "Closed");
 
 const final = await fetch(`${baseUrl}/api/lab`, { headers }).then((response) => response.json());
-assert.equal(final.records.length, 30);
+assert.equal(final.records.length, 38);
 assert.equal(final.events.length, 8);
 const lockedSourcingLead = final.records.find((record) => record.id === sourcingLead.id);
 assert.equal(lockedSourcingLead.payload.normalizedCompanyDomain, "verification.example.com");
@@ -1246,5 +1418,13 @@ assert.equal(final.records.filter((record) => record.recordType === "opportunity
 assert.equal(final.records.filter((record) => record.recordType === "opportunity_monitor_run").length, 2);
 assert.equal(final.records.filter((record) => record.recordType === "recruiting_opportunity" && record.payload.officialUrl.includes("4633431005")).length, 1);
 assert.equal(final.records.filter((record) => record.recordType === "opportunity_observation" && record.payload.sourceReference.includes("bvpanalyst")).length, 1);
+assert.equal(final.records.find((record) => record.id === diligenceCase.id).payload.caseKey, underwrite.id);
+const diligenceStages = final.records
+  .filter((record) => record.parentId === diligenceCase.id && record.recordType === "diligence_stage")
+  .sort((left, right) => left.payload.stageIndex - right.payload.stageIndex);
+assert.equal(diligenceStages.length, 7);
+assert.deepEqual(diligenceStages.map((record) => record.id), [foundationStage.id, customerStage.id, technicalStage.id, economicsStage.id, antiMemoStage.id, memoStage.id, oralStage.id]);
+assert.deepEqual(diligenceStages.map((record) => record.payload.stageKey), ["foundation", "customer_market", "technical_product", "business_economics", "anti_memo", "full_memo", "oral_defense"]);
+assert.equal(diligenceStages.every((record) => record.payload.privacyConfirmed === true), true);
 
-console.log("API smoke passed: 30 immutable records, 8 append-only events, cycle-safe idempotent owner-bound opportunity monitoring, prospective experiment and forecast boundaries, typed sourcing and recruiting evidence, external-action approval gates, Founder Evidence safeguards, calibration scoring, and owner isolation intact.");
+console.log("API smoke passed: 38 immutable records, 8 append-only events, an exact seven-stage Diligence Case, cycle-safe idempotent owner-bound opportunity monitoring, prospective experiment and forecast boundaries, typed sourcing and recruiting evidence, external-action approval gates, Founder Evidence safeguards, calibration scoring, and owner isolation intact.");

@@ -10,6 +10,8 @@ const { d1, r2 } = hostingConfig;
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
+const apiSmokeToken = process.env.LAB_API_SMOKE === "1" ? process.env.LAB_AUTOMATION_TOKEN : undefined;
+const apiSmokePersistPath = process.env.LAB_API_SMOKE === "1" ? process.env.LAB_TEST_PERSIST_PATH : undefined;
 
 const localBindingConfig = {
   main: "./worker/index.ts",
@@ -31,6 +33,7 @@ const localBindingConfig = {
         },
       ]
     : [],
+  ...(apiSmokeToken ? { vars: { LAB_AUTOMATION_TOKEN: apiSmokeToken } } : {}),
 };
 
 export default defineConfig(async () => {
@@ -53,6 +56,7 @@ export default defineConfig(async () => {
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
         config: localBindingConfig,
+        ...(apiSmokePersistPath ? { persistState: { path: apiSmokePersistPath } } : {}),
       }),
     ],
   };

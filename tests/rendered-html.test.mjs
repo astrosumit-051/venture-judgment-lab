@@ -19,10 +19,14 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
     readFile(new URL("../records/seven-month-internship-recruiting-sprint-2026-08-08.md", import.meta.url), "utf8"),
     access(new URL("../dist/server/index.js", import.meta.url)),
   ]);
-  const [monitor, automationRoute, monitorRecord] = await Promise.all([
+  const [monitor, automationRoute, monitorRecord, diligence, diligenceView, diligenceRecord, diligenceMigration] = await Promise.all([
     readFile(new URL("../app/opportunityMonitor.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/automation/opportunities/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../records/official-opportunity-monitor-2026-08-08.md", import.meta.url), "utf8"),
+    readFile(new URL("../app/diligence.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/DiligenceView.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../records/diligence-development-ladder-2026-08-08.md", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0006_oval_rocket_racer.sql", import.meta.url), "utf8"),
   ]);
 
   assert.match(layout, /Venture Judgment Lab/);
@@ -62,6 +66,7 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(sourcingView, /Judge the hypothesis by its own funnel/);
   assert.match(sourcingView, /raw messages/);
   assert.match(app, /RecruitingView/);
+  assert.match(app, /DiligenceView/);
   assert.match(recruiting, /recruiting_opportunity/);
   assert.match(recruiting, /opportunity_observation/);
   assert.match(recruiting, /recruiting_interaction/);
@@ -126,6 +131,22 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.doesNotMatch(automationRoute, /UPDATE lab_records|DELETE FROM lab_records/);
   assert.match(monitorRecord, /all seven registered first-party targets exactly once/);
   assert.match(monitorRecord, /cannot send outreach, submit an application, claim work authorization, or publish/);
+  assert.match(diligence, /foundation/);
+  assert.match(diligence, /anti_memo/);
+  assert.match(diligence, /oral_defense/);
+  assert.match(diligence, /validPrefix/);
+  assert.match(diligenceView, /Diligence Case · seven immutable stages/);
+  assert.match(diligenceView, /No stage can skip, overwrite, or collapse into a score/);
+  assert.match(diligenceView, /raw transcripts, contact details, secrets/);
+  assert.match(diligenceRecord, /Snapshot and Underwrite foundation/);
+  assert.match(diligenceRecord, /The terminal harness was deleted/);
+  assert.match(diligenceRecord, /one private\s+deployment for Phase 2/);
+  assert.match(diligenceMigration, /idx_lab_records_unique_diligence_case/);
+  assert.match(diligenceMigration, /idx_lab_records_unique_diligence_stage/);
+  assert.match(runtime, /idx_lab_records_unique_diligence_case/);
+  assert.match(runtime, /idx_lab_records_unique_diligence_stage/);
+  assert.match(api, /Commit .* before any later Diligence stage/);
+  assert.match(api, /Advance Diligence evidence only through the typed stage sequence/);
   assert.match(calibration, /calculateBrierScore/);
   assert.match(calibration, /isCanonicalDate/);
   assert.match(calibration, /dateInTimeZone/);

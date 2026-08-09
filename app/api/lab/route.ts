@@ -10,6 +10,13 @@ import { ensureLabSchema } from "@/db/runtime";
 import { FOUNDER_DIMENSIONS, FOUNDER_SOURCE_TYPES } from "@/app/founderEvidence";
 import { configuredAutomationFingerprint } from "@/app/automationAuth";
 import {
+  DILIGENCE_RECORD_TYPES,
+  DILIGENCE_STAGE_DEFINITIONS,
+  diligenceSequenceStatus,
+  diligenceStageDefinition,
+  validateDiligencePayload,
+} from "@/app/diligence";
+import {
   normalizeRecruitingUrl,
   expectedRecruitingFunnelClass,
   legacyRecruitingCycleKey,
@@ -163,6 +170,13 @@ function normalizedDomain(value: unknown): string {
 }
 
 function validatePayload(recordType: string, payload: Record<string, unknown>): string | null {
+  if ((DILIGENCE_RECORD_TYPES as readonly string[]).includes(recordType)) {
+    const timezone = cleanText(payload.timezone, 100);
+    const today = isValidTimeZone(timezone)
+      ? dateInTimeZone(new Date(), timezone)
+      : new Date().toISOString().slice(0, 10);
+    return validateDiligencePayload(recordType, payload, today);
+  }
   if ((RECRUITING_RECORD_TYPES as readonly string[]).includes(recordType)) {
     const timezone = cleanText(payload.timezone, 100);
     const today = isValidTimeZone(timezone)
@@ -981,22 +995,41 @@ export async function POST(request: Request) {
         recordKey: recruitingRecordKey(recordType, payload),
       };
     }
+    if (recordType === "diligence_case") {
+      payload = { ...payload, caseKey: cleanText(payload.underwriteId, 80) };
+    }
+    if (recordType === "diligence_stage") {
+      const stage = diligenceStageDefinition(payload.stageKey);
+      payload = {
+        ...payload,
+        stageIndex: stage ? DILIGENCE_STAGE_DEFINITIONS.indexOf(stage) : -1,
+        stageLabel: stage?.label ?? "",
+        recordKey: `${parentId ?? ""}|${cleanText(payload.stageKey, 80)}`,
+      };
+    }
     const invalid = validatePayload(recordType, payload);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
 
     const isRecruitingChild = (RECRUITING_CHILD_RECORD_TYPES as readonly string[]).includes(recordType);
+    const isDiligenceChild = recordType === "diligence_stage";
     if (recordType === "recruiting_opportunity" && parentId) {
       return Response.json({ error: "A Recruiting Opportunity is a top-level immutable record." }, { status: 400 });
     }
     if (isRecruitingChild && !parentId) {
       return Response.json({ error: "Recruiting evidence must link to its Recruiting Opportunity." }, { status: 400 });
     }
+    if (recordType === "diligence_case" && !parentId) {
+      return Response.json({ error: "A Diligence Case must link to its Weekly Underwrite." }, { status: 400 });
+    }
+    if (isDiligenceChild && !parentId) {
+      return Response.json({ error: "A Diligence stage must link to its Diligence Case." }, { status: 400 });
+    }
 
     if (parentId) {
       const parent = await db
-        .prepare("SELECT id, record_type, payload_json, committed_at FROM lab_records WHERE id = ? AND owner_id = ?")
+        .prepare("SELECT id, record_type, parent_id, payload_json, committed_at FROM lab_records WHERE id = ? AND owner_id = ?")
         .bind(parentId, owner)
-        .first<{ id: string; record_type: string; payload_json: string; committed_at: string }>();
+        .first<{ id: string; record_type: string; parent_id: string | null; payload_json: string; committed_at: string }>();
       if (!parent) return Response.json({ error: "The linked record was not found." }, { status: 404 });
       if (new Set(["founder_evidence_review", "weekly_underwrite"]).has(recordType) && parent.record_type !== "snapshot_judgment") {
         return Response.json({ error: "Founder Evidence Reviews and Underwrites must link to a Snapshot Judgment." }, { status: 400 });
@@ -1109,6 +1142,67 @@ export async function POST(request: Request) {
           return Response.json({ error: "The Founder Evidence Review company must match its linked Snapshot." }, { status: 400 });
         }
       }
+      if (recordType === "diligence_case") {
+        const underwritePayload = parseJson(parent.payload_json);
+        const snapshotId = cleanText(payload.snapshotId, 80);
+        if (
+          parent.record_type !== "weekly_underwrite"
+          || cleanText(payload.underwriteId, 80) !== parentId
+          || parent.parent_id !== snapshotId
+          || cleanText(underwritePayload.snapshotId, 80) !== snapshotId
+        ) {
+          return Response.json({ error: "A Diligence Case must link one matching locked Snapshot and Weekly Underwrite." }, { status: 400 });
+        }
+        const snapshotRecord = await db
+          .prepare("SELECT payload_json FROM lab_records WHERE id = ? AND owner_id = ? AND record_type = 'snapshot_judgment'")
+          .bind(snapshotId, owner)
+          .first<{ payload_json: string }>();
+        if (!snapshotRecord) return Response.json({ error: "The linked Snapshot was not found in your private record." }, { status: 404 });
+        const snapshotPayload = parseJson(snapshotRecord.payload_json);
+        if (cleanText(snapshotPayload.company, 180).toLowerCase() !== cleanText(payload.company, 180).toLowerCase()) {
+          return Response.json({ error: "The Diligence Case company must match its locked Snapshot." }, { status: 400 });
+        }
+        const snapshotTimezone = cleanText(snapshotPayload.timezone, 100);
+        if (snapshotTimezone && snapshotTimezone !== cleanText(payload.timezone, 100)) {
+          return Response.json({ error: "The Diligence Case must preserve the linked Snapshot's timezone." }, { status: 400 });
+        }
+      }
+      if (recordType === "diligence_stage") {
+        if (parent.record_type !== "diligence_case" || cleanText(payload.caseId, 80) !== parentId) {
+          return Response.json({ error: "A Diligence stage can link only to its declared Diligence Case." }, { status: 400 });
+        }
+        const casePayload = parseJson(parent.payload_json);
+        if (cleanText(casePayload.timezone, 100) !== cleanText(payload.timezone, 100)) {
+          return Response.json({ error: "A Diligence stage must preserve its case timezone." }, { status: 400 });
+        }
+        if (cleanText(payload.committedOn, 20) < cleanText(casePayload.openedOn, 20)) {
+          return Response.json({ error: "A Diligence stage cannot predate its case." }, { status: 400 });
+        }
+        const stageRows = await db
+          .prepare("SELECT id, parent_id, title, payload_json, committed_at FROM lab_records WHERE owner_id = ? AND parent_id = ? AND record_type = 'diligence_stage'")
+          .bind(owner, parentId)
+          .all<{ id: string; parent_id: string | null; title: string; payload_json: string; committed_at: string }>();
+        const sequence = diligenceSequenceStatus((stageRows.results ?? []).map((row) => ({
+          id: row.id,
+          recordType: "diligence_stage",
+          parentId: row.parent_id,
+          title: row.title,
+          payload: parseJson(row.payload_json),
+          committedAt: row.committed_at,
+        })), parentId);
+        if (!sequence.validPrefix) {
+          return Response.json({ error: "The preserved Diligence Case sequence is inconsistent; no later stage may be added." }, { status: 409 });
+        }
+        if (sequence.committedKeys.includes(cleanText(payload.stageKey, 80))) {
+          return Response.json({ error: "This Diligence stage is already immutable." }, { status: 409 });
+        }
+        if (!sequence.nextStage) {
+          return Response.json({ error: "This Diligence Case already completed every stage." }, { status: 409 });
+        }
+        if (cleanText(payload.stageKey, 80) !== sequence.nextStage.key) {
+          return Response.json({ error: `Commit ${sequence.nextStage.label} before any later Diligence stage.` }, { status: 400 });
+        }
+      }
     }
     if (recordType === "founder_evidence_review" && cleanText(payload.linkedSnapshotId, 80) !== (parentId ?? "")) {
       return Response.json({ error: "The Founder Evidence Review Snapshot link is inconsistent." }, { status: 400 });
@@ -1152,6 +1246,22 @@ export async function POST(request: Request) {
       if (cleanText(payload.artifactType, 100) !== portfolioArtifactTypeForRecord(artifact.record_type)) {
         return Response.json({ error: "A Portfolio Candidate's artifact type must match its linked private record." }, { status: 400 });
       }
+    }
+    if (recordType === "diligence_case") {
+      const duplicate = await db.prepare(
+        `SELECT id FROM lab_records
+         WHERE owner_id = ? AND record_type = 'diligence_case'
+         AND json_extract(payload_json, '$.caseKey') = ? LIMIT 1`,
+      ).bind(owner, cleanText(payload.caseKey, 80)).first<{ id: string }>();
+      if (duplicate) return Response.json({ error: "This Weekly Underwrite already has a Diligence Case." }, { status: 409 });
+    }
+    if (recordType === "diligence_stage") {
+      const duplicate = await db.prepare(
+        `SELECT id FROM lab_records
+         WHERE owner_id = ? AND record_type = 'diligence_stage' AND parent_id = ?
+         AND json_extract(payload_json, '$.stageKey') = ? LIMIT 1`,
+      ).bind(owner, parentId, cleanText(payload.stageKey, 80)).first<{ id: string }>();
+      if (duplicate) return Response.json({ error: "This Diligence stage is already immutable." }, { status: 409 });
     }
     if (recordType === "sourcing_lead") {
       const duplicate = await db.prepare(
@@ -1199,6 +1309,9 @@ export async function POST(request: Request) {
       if ((RECRUITING_RECORD_TYPES as readonly string[]).includes(recordType) && error instanceof Error && error.message.toLowerCase().includes("unique")) {
         return Response.json({ error: "This Recruiting evidence already exists; preserve only a materially new dated observation." }, { status: 409 });
       }
+      if ((DILIGENCE_RECORD_TYPES as readonly string[]).includes(recordType) && error instanceof Error && error.message.toLowerCase().includes("unique")) {
+        return Response.json({ error: "This Diligence Case or stage already exists; preserved evidence cannot be replaced." }, { status: 409 });
+      }
       throw error;
     }
     return Response.json({ id, committedAt: now }, { status: 201 });
@@ -1221,6 +1334,9 @@ export async function POST(request: Request) {
     }
     if ((RECRUITING_RECORD_TYPES as readonly string[]).includes(parent.record_type)) {
       return Response.json({ error: "Append Recruiting evidence through the typed Recruiting workspace so dates, approvals, and funnel integrity are preserved." }, { status: 400 });
+    }
+    if ((DILIGENCE_RECORD_TYPES as readonly string[]).includes(parent.record_type)) {
+      return Response.json({ error: "Advance Diligence evidence only through the typed stage sequence so prerequisites and Decision Deltas remain auditable." }, { status: 400 });
     }
     if (parent.record_type === "opportunity_monitor_run" || parent.record_type === "opportunity_monitor_registration") {
       return Response.json({ error: "Opportunity Monitor evidence is immutable and can be created only through its bounded registration and run workflows." }, { status: 400 });

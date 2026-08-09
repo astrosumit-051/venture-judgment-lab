@@ -1,0 +1,314 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "7b6f7f63-a7aa-4ffe-8bbb-2dc2b302e748",
+  "prevId": "84456c13-2c38-46f1-9b82-8f3ef56eb27d",
+  "tables": {
+    "lab_events": {
+      "name": "lab_events",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "record_id": {
+          "name": "record_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "event_json": {
+          "name": "event_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_lab_events_record_occurred": {
+          "name": "idx_lab_events_record_occurred",
+          "columns": [
+            "record_id",
+            "occurred_at"
+          ],
+          "isUnique": false
+        },
+        "idx_lab_events_owner_occurred": {
+          "name": "idx_lab_events_owner_occurred",
+          "columns": [
+            "owner_id",
+            "occurred_at"
+          ],
+          "isUnique": false
+        },
+        "idx_lab_events_unique_forecast_resolution": {
+          "name": "idx_lab_events_unique_forecast_resolution",
+          "columns": [
+            "record_id"
+          ],
+          "isUnique": true,
+          "where": "\"lab_events\".\"event_type\" = 'forecast_resolution'"
+        }
+      },
+      "foreignKeys": {
+        "lab_events_record_id_lab_records_id_fk": {
+          "name": "lab_events_record_id_lab_records_id_fk",
+          "tableFrom": "lab_events",
+          "tableTo": "lab_records",
+          "columnsFrom": [
+            "record_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "lab_records": {
+      "name": "lab_records",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "record_type": {
+          "name": "record_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payload_json": {
+          "name": "payload_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "committed_at": {
+          "name": "committed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_lab_records_owner_committed": {
+          "name": "idx_lab_records_owner_committed",
+          "columns": [
+            "owner_id",
+            "committed_at"
+          ],
+          "isUnique": false
+        },
+        "idx_lab_records_owner_type": {
+          "name": "idx_lab_records_owner_type",
+          "columns": [
+            "owner_id",
+            "record_type"
+          ],
+          "isUnique": false
+        },
+        "idx_lab_records_unique_sourcing_domain": {
+          "name": "idx_lab_records_unique_sourcing_domain",
+          "columns": [
+            "owner_id",
+            "json_extract(\"payload_json\", '$.normalizedCompanyDomain')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'sourcing_lead'"
+        },
+        "idx_lab_records_unique_recruiting_opportunity_cycle": {
+          "name": "idx_lab_records_unique_recruiting_opportunity_cycle",
+          "columns": [
+            "owner_id",
+            "json_extract(\"payload_json\", '$.recordKey')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'recruiting_opportunity'"
+        },
+        "idx_lab_records_unique_recruiting_child": {
+          "name": "idx_lab_records_unique_recruiting_child",
+          "columns": [
+            "owner_id",
+            "record_type",
+            "parent_id",
+            "json_extract(\"payload_json\", '$.recordKey')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" IN ('opportunity_observation', 'recruiting_interaction', 'application_attempt', 'interview_practice', 'portfolio_candidate')"
+        },
+        "idx_lab_records_unique_opportunity_monitor_run": {
+          "name": "idx_lab_records_unique_opportunity_monitor_run",
+          "columns": [
+            "owner_id",
+            "json_extract(\"payload_json\", '$.runKey')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'opportunity_monitor_run'"
+        },
+        "idx_lab_records_unique_automation_registration": {
+          "name": "idx_lab_records_unique_automation_registration",
+          "columns": [
+            "json_extract(\"payload_json\", '$.tokenFingerprint')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'opportunity_monitor_registration'"
+        },
+        "idx_lab_records_unique_diligence_case": {
+          "name": "idx_lab_records_unique_diligence_case",
+          "columns": [
+            "owner_id",
+            "json_extract(\"payload_json\", '$.caseKey')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'diligence_case'"
+        },
+        "idx_lab_records_unique_diligence_stage": {
+          "name": "idx_lab_records_unique_diligence_stage",
+          "columns": [
+            "owner_id",
+            "parent_id",
+            "json_extract(\"payload_json\", '$.stageKey')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'diligence_stage'"
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {
+      "idx_lab_records_unique_sourcing_domain": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.normalizedCompanyDomain')": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_lab_records_unique_recruiting_opportunity_cycle": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.recordKey')": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_lab_records_unique_recruiting_child": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.recordKey')": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_lab_records_unique_opportunity_monitor_run": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.runKey')": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_lab_records_unique_automation_registration": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.tokenFingerprint')": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_lab_records_unique_diligence_case": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.caseKey')": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_lab_records_unique_diligence_stage": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.stageKey')": {
+            "isExpression": true
+          }
+        }
+      }
+    }
+  }
+}
