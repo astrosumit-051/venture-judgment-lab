@@ -48,17 +48,17 @@ Summer 2027 opening, referral, application, or employer commitment.
 Hi Rron,
 
 Your recent feedback on my DistilBook analysis gave me a clearer standard for
-the investing work I need to keep doing. I'm planning ahead for Summer 2027 and
+the investing work I need to keep doing. I’m planning ahead for Summer 2027 and
 wanted to ask whether Keyhorse expects to run an investment internship process.
 
 If so, when might the process begin, and what evidence or preparation would be
-most useful from me? I'd also like to understand the likely investment work,
+most useful from me? I’d also like to understand the likely investment work,
 whether the role would be paid, and whether Keyhorse could provide the
 internship documentation Centre College would need to evaluate CPT eligibility.
-I'm not assuming that a role is open or that CPT would be approved; I'm trying
+I’m not assuming that a role is open or that CPT would be approved; I’m trying
 to prepare accurately and at the right time.
 
-If a short conversation is easier, I'm happy to work around your schedule.
+If a short conversation is easier, I’m happy to work around your schedule.
 
 Best,
 Sumit
