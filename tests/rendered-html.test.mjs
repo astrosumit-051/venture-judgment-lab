@@ -50,7 +50,7 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(sourcing, /computeSourcingMetrics/);
   assert.match(sourcingView, /Sourcing Experiment/);
   assert.match(sourcingView, /Sourcing Lead/);
-  assert.match(sourcingView, /Funnel progress/);
+  assert.match(sourcingView, /Sourcing Progress/);
   assert.match(sourcingView, /Judge the hypothesis by its own funnel/);
   assert.match(sourcingView, /raw messages/);
   assert.match(app, /Compare investment judgments with later evidence/);
@@ -72,12 +72,12 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(api, /sourcing_experiment/);
   assert.match(api, /sourcing_lead/);
   assert.match(api, /advance_sourcing_lead/);
-  assert.match(api, /Sourcing progress cannot skip or reverse funnel stages/);
+  assert.match(api, /Sourcing Progress cannot skip or reverse funnel stages/);
   assert.match(api, /must reach Qualified through preserved funnel evidence/);
   assert.match(api, /correctedValue/);
   assert.match(api, /applySourcingCorrections/);
   assert.match(api, /Sourcing Attribution Class, channel, and source visibility contradict/);
-  assert.match(api, /Sourcing updates reject raw messages/);
+  assert.match(api, /Sourcing Progress rejects raw messages/);
   assert.match(api, /Founder Evidence Review must cover all six behavior dimensions/);
   assert.match(api, /Private Founder Evidence requires confirmation/);
   assert.match(api, /Founder Evidence contains an undeclared field/);

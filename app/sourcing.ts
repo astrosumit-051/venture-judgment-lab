@@ -68,7 +68,7 @@ export const RELATIONSHIP_QUALITY_STATES = [
 ] as const;
 
 export const SOURCING_UPDATE_KINDS = [
-  "Funnel progress",
+  "Sourcing Progress",
   "Rediscovery or channel evidence",
   "Metadata correction",
 ] as const;
@@ -112,15 +112,22 @@ export type SourcingEventLike = {
 export type SourcingCohortRow = {
   label: string;
   leads: number;
+  qualified: number;
+  replies: number;
+  meetings: number;
   snapshots: number;
   underwrites: number;
 };
 
-export type SourcingExperimentRow = SourcingCohortRow & {
+export type SourcingExperimentRow = {
   id: string;
+  label: string;
+  leads: number;
   qualified: number;
   responses: number;
   meetings: number;
+  snapshots: number;
+  underwrites: number;
   successCondition: string;
   stopRule: string;
 };
@@ -221,6 +228,7 @@ function cohortRows(
   labels: readonly string[],
   key: "attributionClass" | "channel",
   leads: SourcingRecordLike[],
+  events: SourcingEventLike[],
   snapshotsByLead: Map<string, SourcingRecordLike[]>,
   underwritesBySnapshot: Map<string, SourcingRecordLike[]>,
 ): SourcingCohortRow[] {
@@ -230,7 +238,18 @@ function cohortRows(
     const underwriteLeads = cohort.filter((lead) => (snapshotsByLead.get(lead.id) ?? []).some(
       (snapshot) => (underwritesBySnapshot.get(snapshot.id)?.length ?? 0) > 0,
     ));
-    return { label, leads: cohort.length, snapshots: snapshotLeads.length, underwrites: underwriteLeads.length };
+    const reached = (lead: SourcingRecordLike, stage: SourcingStage) => (
+      sourcingStageIndex(currentSourcingStage(lead, events)) >= sourcingStageIndex(stage)
+    );
+    return {
+      label,
+      leads: cohort.length,
+      qualified: cohort.filter((lead) => reached(lead, "qualified")).length,
+      replies: cohort.filter((lead) => reached(lead, "response_received")).length,
+      meetings: cohort.filter((lead) => reached(lead, "founder_meeting")).length,
+      snapshots: snapshotLeads.length,
+      underwrites: underwriteLeads.length,
+    };
   }).filter((row) => row.leads > 0);
 }
 
@@ -280,8 +299,8 @@ export function computeSourcingMetrics(records: SourcingRecordLike[], events: So
     meetingRate: rate(meetings, outreach),
     underwriteRate: rate(underwriteLeads.length, leads.length),
     snapshotRate: rate(snapshotLeads.length, leads.length),
-    attributionRows: cohortRows(SOURCING_ATTRIBUTION_CLASSES, "attributionClass", leads, snapshotsByLead, underwritesBySnapshot),
-    channelRows: cohortRows(SOURCING_CHANNELS, "channel", leads, snapshotsByLead, underwritesBySnapshot),
+    attributionRows: cohortRows(SOURCING_ATTRIBUTION_CLASSES, "attributionClass", leads, events, snapshotsByLead, underwritesBySnapshot),
+    channelRows: cohortRows(SOURCING_CHANNELS, "channel", leads, events, snapshotsByLead, underwritesBySnapshot),
     experimentRows: experiments.map((experiment) => {
       const cohort = leads.filter((lead) => lead.parentId === experiment.id);
       const cohortSnapshots = cohort.filter((lead) => (snapshotsByLead.get(lead.id)?.length ?? 0) > 0);

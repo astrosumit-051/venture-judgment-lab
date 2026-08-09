@@ -26,6 +26,8 @@ preserves:
 
 - company identity and website;
 - original discovery date, channel, source, and Sourcing Attribution Class;
+- the server-recorded discovery timestamp, which follows the linked experiment
+  commit and matches the local discovery date;
 - the observed signal and why it may be early or overlooked;
 - a fast qualification thesis and venture-scale mechanism;
 - the strongest disqualifier or exact evidence gap;
@@ -153,7 +155,7 @@ can be defended.
 - Every lead has one normalized company identity and an honest Attribution
   Class.
 - Private context contains no raw communications or contact details.
-- Funnel progress is dated, privacy-confirmed, and advances no more than one
+- Sourcing Progress is dated, privacy-confirmed, and advances no more than one
   stage at a time.
 - A linked Snapshot matches the Sourcing Lead's latest effective company and
   provenance while preserving its original values and correction events.

@@ -86,7 +86,7 @@ const recordRequirements: Record<string, string[]> = {
   ],
   sourcing_lead: [
     "company", "companyUrl", "normalizedCompanyDomain", "attributionClass", "channel",
-    "sourceVisibility", "sourceReference", "discoveredOn", "sector", "companyStage",
+    "sourceVisibility", "sourceReference", "discoveredOn", "discoveredAt", "sector", "companyStage",
     "observedSignal", "nonConsensusReason", "qualificationThesis", "ventureMechanism",
     "disqualifier", "initialDisposition", "outreachAngle", "nextAction", "dueDate",
     "initialStage", "timezone",
@@ -172,6 +172,7 @@ function validatePayload(recordType: string, payload: Record<string, unknown>): 
     if (!Number.isFinite(probability) || probability < 1 || probability > 99) return "Forecast probability must be between 1% and 99%.";
     if (!isCanonicalDate(payload.resolutionDate)) return "The Forecast needs a real resolution date in YYYY-MM-DD format.";
     if (!isValidTimeZone(payload.timezone)) return "The Forecast needs a valid preserved timezone.";
+    if (payload.resolutionDate <= dateInTimeZone(new Date(), payload.timezone)) return "A Forecast must resolve after its committed local date.";
     if (!safeHttpUrl(payload.resolutionSource)) return "The Forecast needs a valid resolution source.";
   }
   if (recordType === "founder_evidence_review") {
@@ -290,8 +291,9 @@ function validatePayload(recordType: string, payload: Record<string, unknown>): 
     if (!isCanonicalDate(payload.startDate) || !isCanonicalDate(payload.endDate) || payload.endDate < payload.startDate) {
       return "A Sourcing Experiment needs a valid date window with the end on or after the start.";
     }
-    if (!isValidTimeZone(payload.timezone) || payload.startDate > dateInTimeZone(new Date(), payload.timezone)) {
-      return "A Sourcing Experiment needs a valid timezone and cannot start in the future.";
+    if (!isValidTimeZone(payload.timezone)) return "A Sourcing Experiment needs a valid timezone.";
+    if (payload.startDate < dateInTimeZone(new Date(), payload.timezone)) {
+      return "A Sourcing Experiment must be committed before results and cannot be backfilled.";
     }
     const plannedLeads = Number(payload.plannedLeads);
     if (!Number.isInteger(plannedLeads) || plannedLeads < 1 || plannedLeads > 100) return "Plan between 1 and 100 leads for one Sourcing Experiment.";
@@ -316,6 +318,12 @@ function validatePayload(recordType: string, payload: Record<string, unknown>): 
     if (!new Set(["Pre-seed", "Seed", "Series A", "Unknown"]).has(cleanText(payload.companyStage, 40))) return "Choose a valid early-stage company stage.";
     if (payload.initialStage !== "discovered") return "Every Sourcing Lead begins at the Discovered stage.";
     if (!isCanonicalDate(payload.discoveredOn) || !isCanonicalDate(payload.dueDate) || !isValidTimeZone(payload.timezone)) return "A Sourcing Lead needs valid discovery, action, and timezone dates.";
+    const discoveredAt = new Date(cleanText(payload.discoveredAt, 40));
+    if (
+      !Number.isFinite(discoveredAt.getTime())
+      || discoveredAt.getTime() > Date.now()
+      || dateInTimeZone(discoveredAt, payload.timezone) !== payload.discoveredOn
+    ) return "A Sourcing Lead must preserve the server-recorded discovery time on its local discovery date.";
     if (payload.discoveredOn > dateInTimeZone(new Date(), payload.timezone)) return "A Sourcing Lead cannot be discovered in the future.";
     if (payload.dueDate < payload.discoveredOn) return "A Sourcing Lead next action cannot be due before discovery.";
     if (payload.sourceVisibility === "Public source" && !safeHttpUrl(payload.sourceReference)) return "A public Sourcing Lead needs its original source URL.";
@@ -636,7 +644,7 @@ export async function POST(request: Request) {
       || Object.keys(progress).some((key) => !allowedKeys.has(key))
       || cleanText(progress.leadId, 80) !== leadId
     ) {
-      return Response.json({ error: "Sourcing updates reject raw messages, contact details, ratings, and undeclared fields." }, { status: 400 });
+      return Response.json({ error: "Sourcing Progress rejects raw messages, contact details, ratings, and undeclared fields." }, { status: 400 });
     }
     const updateKind = cleanText(progress.updateKind, 80);
     const nextStage = cleanText(progress.nextStage, 80) as SourcingStage;
@@ -659,7 +667,7 @@ export async function POST(request: Request) {
       || progress.dueDate < progress.occurredOn
       || progress.privateEvidenceConfirmed !== true
     ) {
-      return Response.json({ error: "Complete a dated, privacy-confirmed Sourcing progress update with bounded behavioral evidence." }, { status: 400 });
+      return Response.json({ error: "Complete a dated, privacy-confirmed Sourcing Progress update with bounded behavioral evidence." }, { status: 400 });
     }
     const lead = await db
       .prepare("SELECT id, parent_id, payload_json FROM lab_records WHERE id = ? AND owner_id = ? AND record_type = 'sourcing_lead'")
@@ -667,6 +675,9 @@ export async function POST(request: Request) {
       .first<{ id: string; parent_id: string | null; payload_json: string }>();
     if (!lead) return Response.json({ error: "The Sourcing Lead was not found." }, { status: 404 });
     const leadPayload = parseJson(lead.payload_json);
+    if (timezone !== cleanText(leadPayload.timezone, 80)) {
+      return Response.json({ error: "Sourcing Progress must preserve the Sourcing Lead's original timezone." }, { status: 400 });
+    }
     const priorEvents = await db
       .prepare("SELECT event_type, event_json, occurred_at FROM lab_events WHERE owner_id = ? AND record_id = ? AND event_type IN ('sourcing_progress', 'sourcing_rediscovery', 'sourcing_metadata_correction') ORDER BY occurred_at ASC")
       .bind(owner, leadId)
@@ -686,7 +697,7 @@ export async function POST(request: Request) {
       .sort()[0] ?? cleanText(progress.occurredOn, 20);
     let latestEvidenceDate = cleanText(effectiveLeadPayload.discoveredOn, 20);
     if (progress.occurredOn < latestEvidenceDate) {
-      return Response.json({ error: "Sourcing progress cannot predate the effective discovery date." }, { status: 400 });
+      return Response.json({ error: "Sourcing Progress cannot predate the effective discovery date." }, { status: 400 });
     }
     for (const event of priorEvents.results ?? []) {
       const prior = parseJson(event.event_json);
@@ -698,7 +709,7 @@ export async function POST(request: Request) {
       if (priorDate > latestEvidenceDate) latestEvidenceDate = priorDate;
     }
     if (progress.occurredOn < latestEvidenceDate) {
-      return Response.json({ error: "Sourcing progress dates cannot move backward; use a metadata correction for historical errors." }, { status: 400 });
+      return Response.json({ error: "Sourcing Progress dates cannot move backward; use a metadata correction for historical errors." }, { status: 400 });
     }
     let eventType: "sourcing_progress" | "sourcing_rediscovery" | "sourcing_metadata_correction";
     const eventData: Record<string, unknown> = {
@@ -713,7 +724,7 @@ export async function POST(request: Request) {
       text: observedEvidence,
       originalPreserved: true,
     };
-    if (updateKind === "Funnel progress") {
+    if (updateKind === "Sourcing Progress") {
       const outreachChannel = cleanText(progress.outreachChannel, 100);
       const relationshipQuality = cleanText(progress.relationshipQuality, 100);
       const outcome = cleanText(progress.outcome, 100);
@@ -725,7 +736,7 @@ export async function POST(request: Request) {
         || !(RELATIONSHIP_QUALITY_STATES as readonly string[]).includes(relationshipQuality)
         || !(SOURCING_OUTCOMES as readonly string[]).includes(outcome)
       ) {
-        return Response.json({ error: "Sourcing progress cannot skip or reverse funnel stages and must use valid interaction evidence." }, { status: 400 });
+        return Response.json({ error: "Sourcing Progress cannot skip or reverse funnel stages and must use valid interaction evidence." }, { status: 400 });
       }
       const relationshipQualityIndex = (RELATIONSHIP_QUALITY_STATES as readonly string[]).indexOf(relationshipQuality);
       if (sourcingStageIndex(nextStage) >= sourcingStageIndex("outreach_sent") && outreachChannel === "No outreach yet") {
@@ -762,6 +773,7 @@ export async function POST(request: Request) {
     } else {
       const correctionField = cleanText(progress.correctionField, 100);
       let correctedValue: string | Record<string, unknown> = "";
+      let correctedDiscoveryWithinExperiment = true;
       if (correctionField === "Company name") {
         correctedValue = cleanText(progress.correctedValue, 180);
       } else if (correctionField === "Discovery date") {
@@ -803,6 +815,20 @@ export async function POST(request: Request) {
         }
         correctedValue = { attributionClass, channel, sourceVisibility, sourceReference };
       }
+      if (correctionField === "Discovery date" && lead.parent_id && typeof correctedValue === "string") {
+        const experiment = await db
+          .prepare("SELECT payload_json FROM lab_records WHERE id = ? AND owner_id = ? AND record_type = 'sourcing_experiment'")
+          .bind(lead.parent_id, owner)
+          .first<{ payload_json: string }>();
+        if (!experiment) {
+          return Response.json({ error: "The linked Sourcing Experiment was not found for this discovery-date correction." }, { status: 409 });
+        }
+        const experimentPayload = parseJson(experiment.payload_json);
+        correctedDiscoveryWithinExperiment = (
+          correctedValue >= cleanText(experimentPayload.startDate, 20)
+          && correctedValue <= cleanText(experimentPayload.endDate, 20)
+        );
+      }
       if (
         nextStage !== currentStage
         || !(SOURCING_CORRECTION_FIELDS as readonly string[]).includes(correctionField)
@@ -815,6 +841,7 @@ export async function POST(request: Request) {
         || (correctionField === "Discovery date" && (
           typeof correctedValue !== "string"
           || !isCanonicalDate(correctedValue)
+          || !correctedDiscoveryWithinExperiment
           || correctedValue > dateInTimeZone(new Date(), timezone)
           || correctedValue > progress.occurredOn
           || correctedValue > earliestSourcingEvidenceDate
@@ -857,16 +884,20 @@ export async function POST(request: Request) {
       return Response.json({ error: "Commit Calibration Reviews through the scoring workflow." }, { status: 400 });
     }
     if (recordType === "sourcing_lead") {
-      payload = { ...payload, normalizedCompanyDomain: normalizedDomain(payload.companyUrl) };
+      payload = {
+        ...payload,
+        normalizedCompanyDomain: normalizedDomain(payload.companyUrl),
+        discoveredAt: new Date().toISOString(),
+      };
     }
     const invalid = validatePayload(recordType, payload);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
 
     if (parentId) {
       const parent = await db
-        .prepare("SELECT id, record_type, payload_json FROM lab_records WHERE id = ? AND owner_id = ?")
+        .prepare("SELECT id, record_type, payload_json, committed_at FROM lab_records WHERE id = ? AND owner_id = ?")
         .bind(parentId, owner)
-        .first<{ id: string; record_type: string; payload_json: string }>();
+        .first<{ id: string; record_type: string; payload_json: string; committed_at: string }>();
       if (!parent) return Response.json({ error: "The linked record was not found." }, { status: 404 });
       if (new Set(["founder_evidence_review", "weekly_underwrite"]).has(recordType) && parent.record_type !== "snapshot_judgment") {
         return Response.json({ error: "Founder Evidence Reviews and Underwrites must link to a Snapshot Judgment." }, { status: 400 });
@@ -876,8 +907,20 @@ export async function POST(request: Request) {
           return Response.json({ error: "A Sourcing Lead can link only to its declared Sourcing Experiment." }, { status: 400 });
         }
         const experimentPayload = parseJson(parent.payload_json);
+        if (cleanText(experimentPayload.timezone, 80) !== cleanText(payload.timezone, 80)) {
+          return Response.json({ error: "A Sourcing Lead must preserve the linked experiment's timezone." }, { status: 400 });
+        }
         if (cleanText(experimentPayload.channel, 100) !== cleanText(payload.channel, 100)) {
           return Response.json({ error: "A Sourcing Lead must preserve the linked experiment's discovery channel." }, { status: 400 });
+        }
+        const experimentStart = cleanText(experimentPayload.startDate, 20);
+        const experimentEnd = cleanText(experimentPayload.endDate, 20);
+        const discoveredOn = cleanText(payload.discoveredOn, 20);
+        if (discoveredOn < experimentStart || discoveredOn > experimentEnd) {
+          return Response.json({ error: "A Sourcing Lead discovery must fall within the linked experiment's committed date window." }, { status: 400 });
+        }
+        if (cleanText(payload.discoveredAt, 40) <= parent.committed_at) {
+          return Response.json({ error: "A Sourcing Lead must be recorded after its linked Sourcing Experiment was committed." }, { status: 400 });
         }
       }
       if (recordType === "snapshot_judgment") {

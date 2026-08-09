@@ -57,6 +57,8 @@ test("sourcing metrics use corrected attribution and preserve downstream denomin
   const events = [
     ...correctionEvents,
     { id: "qualified", recordId: "lead-1", eventType: "sourcing_progress", eventData: { nextStage: "qualified" }, occurredAt: "2026-08-08T09:30:00.000Z" },
+    { id: "reply", recordId: "lead-1", eventType: "sourcing_progress", eventData: { nextStage: "response_received" }, occurredAt: "2026-08-08T10:30:00.000Z" },
+    { id: "meeting", recordId: "lead-1", eventType: "sourcing_progress", eventData: { nextStage: "founder_meeting" }, occurredAt: "2026-08-08T11:30:00.000Z" },
   ];
 
   const metrics = computeSourcingMetrics(records, events);
@@ -65,8 +67,27 @@ test("sourcing metrics use corrected attribution and preserve downstream denomin
   assert.equal(metrics.qualified, 1);
   assert.equal(metrics.snapshotRate, 100);
   assert.equal(metrics.underwriteRate, 100);
-  assert.deepEqual(metrics.attributionRows, [{ label: "Referral or inbound", leads: 1, snapshots: 1, underwrites: 1 }]);
+  assert.deepEqual(metrics.attributionRows, [{
+    label: "Referral or inbound",
+    leads: 1,
+    qualified: 1,
+    replies: 1,
+    meetings: 1,
+    snapshots: 1,
+    underwrites: 1,
+  }]);
+  assert.deepEqual(metrics.channelRows, [{
+    label: "Founder or operator network",
+    leads: 1,
+    qualified: 1,
+    replies: 1,
+    meetings: 1,
+    snapshots: 1,
+    underwrites: 1,
+  }]);
   assert.equal(metrics.experimentRows[0].leads, 1);
+  assert.equal(metrics.experimentRows[0].responses, 1);
+  assert.equal(metrics.experimentRows[0].meetings, 1);
   assert.equal(metrics.experimentRows[0].snapshots, 1);
   assert.equal(metrics.experimentRows[0].underwrites, 1);
 });

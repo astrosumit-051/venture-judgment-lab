@@ -7,13 +7,20 @@ const headers = {
   "oai-authenticated-user-id": `verification-${suffix}`,
   "oai-authenticated-user-email": `verification-${suffix}@example.com`,
 };
-const chicagoDateParts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
-  timeZone: "America/Chicago",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-}).formatToParts(new Date()).map((part) => [part.type, part.value]));
-const todayInChicago = `${chicagoDateParts.year}-${chicagoDateParts.month}-${chicagoDateParts.day}`;
+function chicagoDate(daysFromToday = 0) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(Date.now() + daysFromToday * 86_400_000)).map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+const yesterdayInChicago = chicagoDate(-1);
+const todayInChicago = chicagoDate();
+const tomorrowInChicago = chicagoDate(1);
+const experimentEndInChicago = chicagoDate(7);
 
 async function post(body, expected = 201) {
   const response = await fetch(`${baseUrl}/api/lab`, {
@@ -83,8 +90,8 @@ const experimentPayload = {
   hypothesis: "Public implementation evidence will surface credible industrial software companies before broad funding coverage.",
   leadingSignal: "A named customer pilot with a technically specific implementation claim.",
   nonConsensusRationale: "Implementation evidence may appear before investor or press attention.",
-  startDate: "2026-08-05",
-  endDate: "2026-08-08",
+  startDate: todayInChicago,
+  endDate: experimentEndInChicago,
   plannedLeads: 5,
   successCondition: "At least one independently discovered company earns a linked Snapshot.",
   stopRule: "Change the search surface if five reviewed signals produce no qualified company.",
@@ -95,7 +102,14 @@ await post({
   operation: "commit_record",
   recordType: "sourcing_experiment",
   title: "Invalid Sourcing Experiment",
-  payload: { ...experimentPayload, endDate: "2026-08-04" },
+  payload: { ...experimentPayload, endDate: yesterdayInChicago },
+}, 400);
+
+await post({
+  operation: "commit_record",
+  recordType: "sourcing_experiment",
+  title: "Backfilled Sourcing Experiment",
+  payload: { ...experimentPayload, startDate: yesterdayInChicago },
 }, 400);
 
 const sourcingExperiment = await post({
@@ -113,7 +127,7 @@ const sourcingLeadPayload = {
   channel: "Technical ecosystem",
   sourceVisibility: "Public source",
   sourceReference: "https://example.com/verification-pilot",
-  discoveredOn: "2026-08-05",
+  discoveredOn: todayInChicago,
   sector: "Testing infrastructure",
   companyStage: "Seed",
   observedSignal: "A named pilot exposed an observable implementation claim.",
@@ -124,7 +138,7 @@ const sourcingLeadPayload = {
   initialDisposition: "Advance to Snapshot",
   outreachAngle: "Ask how the pilot changed the deployment process and what repeated afterward.",
   nextAction: "Complete a 20-minute Snapshot.",
-  dueDate: "2026-08-08",
+  dueDate: tomorrowInChicago,
   privateEvidenceConfirmed: false,
   initialStage: "discovered",
   timezone: "America/Chicago",
@@ -176,6 +190,22 @@ await post({
   },
 }, 400);
 
+await post({
+  operation: "commit_record",
+  recordType: "sourcing_lead",
+  parentId: sourcingExperiment.id,
+  title: "Pre-experiment Sourcing Lead",
+  payload: { ...sourcingLeadPayload, discoveredOn: yesterdayInChicago },
+}, 400);
+
+await post({
+  operation: "commit_record",
+  recordType: "sourcing_lead",
+  parentId: sourcingExperiment.id,
+  title: "Cross-timezone Sourcing Lead",
+  payload: { ...sourcingLeadPayload, timezone: "UTC" },
+}, 400);
+
 const sourcingLead = await post({
   operation: "commit_record",
   recordType: "sourcing_lead",
@@ -220,20 +250,26 @@ await post({
 
 const sourcingProgress = {
   leadId: sourcingLead.id,
-  updateKind: "Funnel progress",
-  occurredOn: "2026-08-06",
+  updateKind: "Sourcing Progress",
+  occurredOn: todayInChicago,
   nextStage: "qualified",
   outreachChannel: "No outreach yet",
   observedEvidence: "The 20-minute qualification preserved one causal mechanism and one disqualifier.",
   relationshipQuality: "No direct interaction",
   outcome: "Active",
   nextAction: "Send one evidence-specific founder note.",
-  dueDate: "2026-08-08",
+  dueDate: tomorrowInChicago,
   privateEvidenceConfirmed: true,
   timezone: "America/Chicago",
 };
 
 await post({ operation: "advance_sourcing_lead", leadId: sourcingLead.id, progress: sourcingProgress });
+
+await post({
+  operation: "advance_sourcing_lead",
+  leadId: sourcingLead.id,
+  progress: { ...sourcingProgress, timezone: "UTC" },
+}, 400);
 
 await post({
   operation: "advance_sourcing_lead",
@@ -252,7 +288,7 @@ await post({
   leadId: sourcingLead.id,
   progress: {
     ...sourcingProgress,
-    occurredOn: "2026-08-07",
+    occurredOn: todayInChicago,
     nextStage: "outreach_sent",
     outreachChannel: "Email",
     observedEvidence: "A concise evidence-specific note was sent; no raw message or contact detail was preserved.",
@@ -267,7 +303,23 @@ await post({
   progress: {
     ...sourcingProgress,
     updateKind: "Metadata correction",
-    occurredOn: "2026-08-08",
+    occurredOn: todayInChicago,
+    nextStage: "outreach_sent",
+    correctionField: "Discovery date",
+    correctionReason: "This correction attempts to move discovery before the committed experiment window.",
+    correctedValue: yesterdayInChicago,
+    observedEvidence: "The proposed date predates the prospective experiment and must not become effective.",
+    nextAction: "Reject the correction and preserve the valid discovery date.",
+  },
+}, 400);
+
+await post({
+  operation: "advance_sourcing_lead",
+  leadId: sourcingLead.id,
+  progress: {
+    ...sourcingProgress,
+    updateKind: "Metadata correction",
+    occurredOn: todayInChicago,
     nextStage: "outreach_sent",
     correctionField: "Discovery provenance",
     correctionReason: "This correction intentionally conflicts with the linked experiment channel.",
@@ -288,7 +340,7 @@ await post({
   progress: {
     ...sourcingProgress,
     updateKind: "Metadata correction",
-    occurredOn: "2026-08-08",
+    occurredOn: todayInChicago,
     nextStage: "outreach_sent",
     correctionField: "Discovery provenance",
     correctionReason: "The public operator post was a direct referral, not an independently selected search result.",
@@ -308,7 +360,7 @@ await post({
   leadId: sourcingLead.id,
   progress: {
     ...sourcingProgress,
-    occurredOn: "2026-08-08",
+    occurredOn: todayInChicago,
     nextStage: "response_received",
     outreachChannel: "Email",
     relationshipQuality: "One-way contact",
@@ -323,7 +375,7 @@ await post({
   progress: {
     ...sourcingProgress,
     updateKind: "Rediscovery or channel evidence",
-    occurredOn: "2026-08-08",
+    occurredOn: todayInChicago,
     nextStage: "outreach_sent",
     alternateDiscoveryChannel: "Founder or operator network",
     observedEvidence: "A later operator referral independently surfaced the same company.",
@@ -337,7 +389,7 @@ await post({
   progress: {
     ...sourcingProgress,
     updateKind: "Metadata correction",
-    occurredOn: "2026-08-08",
+    occurredOn: todayInChicago,
     nextStage: "outreach_sent",
     correctionField: "Company name",
     correctionReason: "The original record used a shortened working name rather than the company's current public name.",
@@ -553,7 +605,7 @@ const forecast = await post({
   payload: {
     claim: "The verification history will return every committed record.",
     probability: 61,
-    resolutionDate: "2026-08-06",
+    resolutionDate: tomorrowInChicago,
     timezone: "America/Chicago",
     supportingEvidence: "All prior writes returned created status.",
     disconfirmingCondition: "Any committed record is missing from the owner-scoped read.",
@@ -577,7 +629,7 @@ const futureForecast = await post({
   },
 });
 
-const sameDayForecast = await post({
+await post({
   operation: "commit_record",
   recordType: "forecast",
   parentId: snapshot.id,
@@ -591,7 +643,7 @@ const sameDayForecast = await post({
     disconfirmingCondition: "The entire local date elapses without the event.",
     resolutionSource: "https://example.com/same-day-resolution",
   },
-});
+}, 400);
 
 await post({
   operation: "commit_record",
@@ -709,30 +761,6 @@ await post({
 
 await post({
   operation: "commit_calibration_review",
-  title: "Invalid same-day-negative Calibration Review",
-  payload: {
-    reviewMonth: todayInChicago.slice(0, 7),
-    reviewedJudgmentIds: [snapshot.id],
-    judgmentComparison: "The locked Snapshot remains unresolved.",
-    laterEvidence: "The committed local date has not fully elapsed.",
-    sourcingResults: "Synthetic sourcing produced one company.",
-    analyticalMistakes: "A same-day negative outcome would close the horizon early.",
-    updatedDecisionRule: "Wait until the entire local resolution date has elapsed.",
-    findings: "The non-occurrence outcome is not yet observable.",
-    restartPlan: "Revisit on the next local date.",
-  },
-  resolvedForecasts: [
-    {
-      forecastId: sameDayForecast.id,
-      outcome: 0,
-      resolutionEvidence: "The event has not happened yet today.",
-      resolutionSource: "https://example.com/same-day-resolution-result",
-    },
-  ],
-}, 400);
-
-await post({
-  operation: "commit_calibration_review",
   title: "Calibration Review — August 2026",
   payload: {
     reviewMonth: "2026-08",
@@ -756,11 +784,12 @@ await post({
 });
 
 const final = await fetch(`${baseUrl}/api/lab`, { headers }).then((response) => response.json());
-assert.equal(final.records.length, 17);
+assert.equal(final.records.length, 16);
 assert.equal(final.events.length, 8);
 const lockedSourcingLead = final.records.find((record) => record.id === sourcingLead.id);
 assert.equal(lockedSourcingLead.payload.normalizedCompanyDomain, "verification.example.com");
 assert.equal(lockedSourcingLead.payload.company, "Verification Co");
+assert.equal(new Date(lockedSourcingLead.payload.discoveredAt).toISOString(), lockedSourcingLead.payload.discoveredAt);
 assert.equal(final.events.filter((event) => event.recordId === sourcingLead.id && event.eventType === "sourcing_progress").length, 2);
 assert.equal(final.events.filter((event) => event.recordId === sourcingLead.id && event.eventType === "sourcing_rediscovery").length, 1);
 assert.equal(final.events.filter((event) => event.recordId === sourcingLead.id && event.eventType === "sourcing_metadata_correction").length, 2);
@@ -772,4 +801,4 @@ assert.equal(final.events.filter((event) => event.recordId === forecast.id).leng
 const calibration = final.records.find((record) => record.recordType === "calibration_review");
 assert.equal(calibration.payload.brierScore, 0.1521);
 
-console.log("API smoke passed: 17 immutable records, 8 append-only events, typed correction overlays, sourcing attribution and funnel boundaries, Founder Evidence safeguards, calibration scoring, and owner isolation intact.");
+console.log("API smoke passed: 16 immutable records, 8 append-only events, prospective experiment and forecast boundaries, typed correction overlays, sourcing attribution and funnel metrics, Founder Evidence safeguards, calibration scoring, and owner isolation intact.");
