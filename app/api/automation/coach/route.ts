@@ -6,7 +6,16 @@ import {
   validateCoachPayload,
   type CoachDimension,
 } from "@/app/coach";
-import { evaluateOwnerMastery, masteryEvidencePayload } from "@/app/coachPersistence";
+import {
+  coachDimensionHistoryVersion,
+  coachRecurrenceCount,
+  evaluateMasteryFromHistory,
+  historyHasCoachChild,
+  insertCoachRecordWhenHistoryCurrent,
+  insertCoachRecordWhenTriggerExists,
+  loadOwnerCoachHistory,
+  masteryEvidencePayload,
+} from "@/app/coachPersistence";
 import { ensureLabSchema } from "@/db/runtime";
 
 export const dynamic = "force-dynamic";
@@ -25,31 +34,6 @@ function text(value: unknown, max = 20_000): string {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function insertRecord(db: D1Database, values: {
-  id: string;
-  owner: string;
-  recordType: string;
-  parentId: string;
-  title: string;
-  payload: Record<string, unknown>;
-  now: string;
-}) {
-  return db.prepare(
-    `INSERT INTO lab_records
-     (id, owner_id, record_type, parent_id, title, payload_json, committed_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).bind(
-    values.id,
-    values.owner,
-    values.recordType,
-    values.parentId,
-    values.title,
-    JSON.stringify(values.payload),
-    values.now,
-    values.now,
-  );
 }
 
 async function registeredOwner(db: D1Database, request: Request): Promise<string | null> {
@@ -163,11 +147,6 @@ export async function POST(request: Request) {
      WHERE id = ? AND owner_id = ? AND record_type = 'coach_request' LIMIT 1`,
   ).bind(requestId, owner).first<{ id: string; parent_id: string; title: string; payload_json: string; committed_at: string }>();
   if (!requestRow) return Response.json({ error: "The queued Coach Request was not found." }, { status: 404 });
-  const duplicate = await db.prepare(
-    "SELECT id FROM lab_records WHERE owner_id = ? AND record_type = 'coach_feedback' AND parent_id = ? LIMIT 1",
-  ).bind(owner, requestId).first<{ id: string }>();
-  if (duplicate) return Response.json({ error: "This Coach Request already has immutable feedback." }, { status: 409 });
-
   const requestPayload = parseJson(requestRow.payload_json);
   const submitted = body.feedback;
   const submittedKeys = new Set([
@@ -183,66 +162,74 @@ export async function POST(request: Request) {
   const recurringErrorKind = text(submitted.recurringErrorKind, 100);
   const recurringErrorPatternKey = text(submitted.recurringErrorPatternKey, 100);
   const recurrenceKey = recurringErrorKind === "other_bounded_pattern" ? recurringErrorPatternKey : recurringErrorKind;
-  const priorSameError = await db.prepare(
-    `SELECT count(*) AS count FROM lab_records WHERE owner_id = ? AND record_type = 'coach_feedback'
-     AND json_extract(payload_json, '$.dimension') = ?
-     AND json_extract(payload_json, '$.recurringErrorKind') = ?
-     AND CASE WHEN ? = 'other_bounded_pattern'
-       THEN json_extract(payload_json, '$.recurringErrorPatternKey') = ?
-       ELSE 1 = 1 END`,
-  ).bind(owner, dimension, recurringErrorKind, recurringErrorKind, recurrenceKey).first<{ count: number }>();
   const timezone = text(requestPayload.timezone, 100);
   const respondedOn = dateInTimeZone(new Date(), timezone);
   const feedbackId = crypto.randomUUID();
-  const feedbackPayload: Record<string, unknown> = {
-    requestId,
-    sourceRecordId: text(requestPayload.sourceRecordId, 80),
-    dimension,
-    companyIdentity: text(requestPayload.companyIdentity, 180),
-    respondedOn,
-    timezone,
-    feedbackKey: requestId,
-    unsupportedInference: submitted.unsupportedInference,
-    evidenceGap: submitted.evidenceGap,
-    recurringError,
-    recurringErrorKind,
-    ...(recurringErrorKind === "other_bounded_pattern" ? { recurringErrorPatternKey } : {}),
-    recurringErrorCount: Number(priorSameError?.count ?? 0) + 1,
-    requiredRevision: submitted.requiredRevision,
-    nextDifficultyAdjustment: submitted.nextDifficultyAdjustment,
-    competingInterpretation: submitted.competingInterpretation,
-    benchmark: submitted.benchmark,
-    foundationalError: submitted.foundationalError,
-    genuineDisconfirmingCase: submitted.genuineDisconfirmingCase,
-    disconfirmingCaseEvidence: submitted.disconfirmingCaseEvidence,
-    privacyConfirmed: submitted.privacyConfirmed,
-  };
-  const feedbackError = validateCoachPayload("coach_feedback", feedbackPayload, respondedOn);
-  if (feedbackError) return Response.json({ error: feedbackError }, { status: 400 });
-
-  const pendingCommittedAt = new Date().toISOString();
-  const evaluation = await evaluateOwnerMastery(db, owner, dimension, [{
-    id: feedbackId,
-    recordType: "coach_feedback",
-    parentId: requestId,
-    title: `Coach Feedback — ${dimension}`,
-    payload: feedbackPayload,
-    committedAt: pendingCommittedAt,
-  }]);
   const masteryId = crypto.randomUUID();
-  const masteryPayload = masteryEvidencePayload({ evaluation, triggerRecordId: feedbackId, triggerRecordType: "coach_feedback", evaluatedOn: respondedOn, timezone });
-  const masteryError = validateCoachPayload("mastery_evidence", masteryPayload, respondedOn);
-  if (masteryError) return Response.json({ error: masteryError }, { status: 400 });
-  const now = new Date().toISOString();
-  await db.batch([
-    insertRecord(db, { id: feedbackId, owner, recordType: "coach_feedback", parentId: requestId, title: `Coach Feedback — ${dimension.replaceAll("_", " ")}`, payload: feedbackPayload, now }),
-    insertRecord(db, { id: masteryId, owner, recordType: "mastery_evidence", parentId: feedbackId, title: `Mastery Evidence — ${dimension.replaceAll("_", " ")}`, payload: masteryPayload, now }),
-  ]);
-  return Response.json({
-    feedbackId,
-    masteryEvidenceId: masteryId,
-    recurringErrorCount: feedbackPayload.recurringErrorCount,
-    evidenceState: evaluation.evidenceState,
-    remainingGaps: evaluation.remainingGaps,
-  }, { status: 201 });
+  for (let writeAttempt = 0; writeAttempt < 5; writeAttempt += 1) {
+    const history = await loadOwnerCoachHistory(db, owner);
+    if (historyHasCoachChild(history, "coach_feedback", requestId)) {
+      return Response.json({ error: "This Coach Request already has immutable feedback." }, { status: 409 });
+    }
+    const expectedHistoryVersion = coachDimensionHistoryVersion(history, dimension);
+    const feedbackPayload: Record<string, unknown> = {
+      requestId,
+      sourceRecordId: text(requestPayload.sourceRecordId, 80),
+      dimension,
+      companyIdentity: text(requestPayload.companyIdentity, 180),
+      respondedOn,
+      timezone,
+      feedbackKey: requestId,
+      unsupportedInference: submitted.unsupportedInference,
+      evidenceGap: submitted.evidenceGap,
+      recurringError,
+      recurringErrorKind,
+      ...(recurringErrorKind === "other_bounded_pattern" ? { recurringErrorPatternKey } : {}),
+      recurringErrorCount: coachRecurrenceCount(history, dimension, recurringErrorKind, recurrenceKey) + 1,
+      requiredRevision: submitted.requiredRevision,
+      nextDifficultyAdjustment: submitted.nextDifficultyAdjustment,
+      competingInterpretation: submitted.competingInterpretation,
+      benchmark: submitted.benchmark,
+      foundationalError: submitted.foundationalError,
+      genuineDisconfirmingCase: submitted.genuineDisconfirmingCase,
+      disconfirmingCaseEvidence: submitted.disconfirmingCaseEvidence,
+      privacyConfirmed: submitted.privacyConfirmed,
+    };
+    const feedbackError = validateCoachPayload("coach_feedback", feedbackPayload, respondedOn);
+    if (feedbackError) return Response.json({ error: feedbackError }, { status: 400 });
+    const now = new Date().toISOString();
+    const evaluation = evaluateMasteryFromHistory(history, dimension, [{
+      id: feedbackId,
+      recordType: "coach_feedback",
+      parentId: requestId,
+      title: `Coach Feedback — ${dimension}`,
+      payload: feedbackPayload,
+      committedAt: now,
+    }]);
+    const masteryPayload = masteryEvidencePayload({ evaluation, triggerRecordId: feedbackId, triggerRecordType: "coach_feedback", evaluatedOn: respondedOn, timezone });
+    const masteryError = validateCoachPayload("mastery_evidence", masteryPayload, respondedOn);
+    if (masteryError) return Response.json({ error: masteryError }, { status: 400 });
+    const writes = await db.batch([
+      insertCoachRecordWhenHistoryCurrent(db, {
+        id: feedbackId, owner, recordType: "coach_feedback", parentId: requestId,
+        title: `Coach Feedback — ${dimension.replaceAll("_", " ")}`, payload: feedbackPayload, now,
+        dimension, expectedHistoryVersion,
+      }),
+      insertCoachRecordWhenTriggerExists(db, {
+        id: masteryId, owner, recordType: "mastery_evidence", parentId: feedbackId,
+        title: `Mastery Evidence — ${dimension.replaceAll("_", " ")}`, payload: masteryPayload, now,
+        triggerId: feedbackId,
+      }),
+    ]);
+    if (Number(writes[0]?.meta?.changes ?? 0) === 1 && Number(writes[1]?.meta?.changes ?? 0) === 1) {
+      return Response.json({
+        feedbackId,
+        masteryEvidenceId: masteryId,
+        recurringErrorCount: feedbackPayload.recurringErrorCount,
+        evidenceState: evaluation.evidenceState,
+        remainingGaps: evaluation.remainingGaps,
+      }, { status: 201 });
+    }
+  }
+  return Response.json({ error: "Coaching evidence changed concurrently; retry this bounded feedback submission." }, { status: 409 });
 }

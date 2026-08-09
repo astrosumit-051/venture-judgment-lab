@@ -5,13 +5,26 @@ import {
   type MasteryEvaluation,
 } from "./coach";
 
-type CoachRow = {
+export type CoachRow = {
   id: string;
+  sequence: number;
   record_type: string;
   parent_id: string | null;
   title: string;
   payload_json: string;
   committed_at: string;
+};
+
+export type OwnerCoachHistory = { rows: CoachRow[] };
+
+type CoachInsertValues = {
+  id: string;
+  owner: string;
+  recordType: "coach_feedback" | "revision_attempt" | "mastery_evidence";
+  parentId: string;
+  title: string;
+  payload: Record<string, unknown>;
+  now: string;
 };
 
 export type PendingCoachRecord = {
@@ -35,22 +48,22 @@ function text(value: unknown, max = 5000): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
-export async function evaluateOwnerMastery(
-  db: D1Database,
-  owner: string,
-  dimension: CoachDimension,
-  pending: PendingCoachRecord[] = [],
-): Promise<MasteryEvaluation> {
+export async function loadOwnerCoachHistory(db: D1Database, owner: string): Promise<OwnerCoachHistory> {
   const result = await db.prepare(
-    `SELECT id, record_type, parent_id, title, payload_json, committed_at
+    `SELECT rowid AS sequence, id, record_type, parent_id, title, payload_json, committed_at
      FROM lab_records WHERE owner_id = ?
      AND record_type IN ('coach_request', 'coach_feedback', 'revision_attempt')
-     ORDER BY committed_at ASC`,
+     ORDER BY rowid ASC`,
   ).bind(owner).all<CoachRow>();
-  const rows: CoachRow[] = [
-    ...(result.results ?? []),
-    ...pending.map((record) => ({
+  return { rows: result.results ?? [] };
+}
+
+function rowsWithPending(history: OwnerCoachHistory, pending: PendingCoachRecord[]): CoachRow[] {
+  return [
+    ...history.rows,
+    ...pending.map((record, index) => ({
       id: record.id,
+      sequence: Number.MAX_SAFE_INTEGER - pending.length + index + 1,
       record_type: record.recordType,
       parent_id: record.parentId,
       title: record.title,
@@ -58,6 +71,88 @@ export async function evaluateOwnerMastery(
       committed_at: record.committedAt,
     })),
   ];
+}
+
+export function coachDimensionHistoryVersion(history: OwnerCoachHistory, dimension: CoachDimension): number {
+  return history.rows.filter((row) => {
+    if (row.record_type !== "coach_feedback" && row.record_type !== "revision_attempt") return false;
+    return text(parseJson(row.payload_json).dimension, 80) === dimension;
+  }).length;
+}
+
+export function coachRecurrenceCount(
+  history: OwnerCoachHistory,
+  dimension: CoachDimension,
+  kind: string,
+  patternKey: string,
+): number {
+  return history.rows.filter((row) => {
+    if (row.record_type !== "coach_feedback") return false;
+    const payload = parseJson(row.payload_json);
+    if (text(payload.dimension, 80) !== dimension || text(payload.recurringErrorKind, 100) !== kind) return false;
+    const storedPatternKey = kind === "other_bounded_pattern" ? text(payload.recurringErrorPatternKey, 100) : kind;
+    return storedPatternKey === patternKey;
+  }).length;
+}
+
+export function historyHasCoachChild(history: OwnerCoachHistory, recordType: "coach_feedback" | "revision_attempt", parentId: string): boolean {
+  return history.rows.some((row) => row.record_type === recordType && row.parent_id === parentId);
+}
+
+export function insertCoachRecordWhenHistoryCurrent(db: D1Database, values: CoachInsertValues & {
+  dimension: CoachDimension;
+  expectedHistoryVersion: number;
+}) {
+  return db.prepare(
+    `INSERT INTO lab_records
+     (id, owner_id, record_type, parent_id, title, payload_json, committed_at, created_at)
+     SELECT ?, ?, ?, ?, ?, ?, ?, ?
+     WHERE ? = (
+       SELECT count(*) FROM lab_records
+       WHERE owner_id = ? AND record_type IN ('coach_feedback', 'revision_attempt')
+       AND json_extract(payload_json, '$.dimension') = ?
+     )`,
+  ).bind(
+    values.id,
+    values.owner,
+    values.recordType,
+    values.parentId,
+    values.title,
+    JSON.stringify(values.payload),
+    values.now,
+    values.now,
+    values.expectedHistoryVersion,
+    values.owner,
+    values.dimension,
+  );
+}
+
+export function insertCoachRecordWhenTriggerExists(db: D1Database, values: CoachInsertValues & { triggerId: string }) {
+  return db.prepare(
+    `INSERT INTO lab_records
+     (id, owner_id, record_type, parent_id, title, payload_json, committed_at, created_at)
+     SELECT ?, ?, ?, ?, ?, ?, ?, ?
+     WHERE EXISTS (SELECT 1 FROM lab_records WHERE id = ? AND owner_id = ?)`,
+  ).bind(
+    values.id,
+    values.owner,
+    values.recordType,
+    values.parentId,
+    values.title,
+    JSON.stringify(values.payload),
+    values.now,
+    values.now,
+    values.triggerId,
+    values.owner,
+  );
+}
+
+export function evaluateMasteryFromHistory(
+  history: OwnerCoachHistory,
+  dimension: CoachDimension,
+  pending: PendingCoachRecord[] = [],
+): MasteryEvaluation {
+  const rows = rowsWithPending(history, pending);
   const requests = new Map(rows.filter((row) => row.record_type === "coach_request").map((row) => [row.id, row]));
   const revisions = new Map(rows.filter((row) => row.record_type === "revision_attempt").map((row) => [row.parent_id, row]));
   const attempts: MasteryAttempt[] = rows.filter((row) => row.record_type === "coach_feedback").flatMap((feedback) => {
@@ -75,6 +170,7 @@ export async function evaluateOwnerMastery(
       companyIdentity: text(requestData.companyIdentity, 180),
       feedbackId: feedback.id,
       committedAt: feedback.committed_at,
+      sequence: feedback.sequence,
       independentFirstPassConfirmed: requestData.independentFirstPassConfirmed === true,
       foundationalError: feedbackData.foundationalError === true,
       genuineDisconfirmingCase: feedbackData.genuineDisconfirmingCase === true,
@@ -83,6 +179,15 @@ export async function evaluateOwnerMastery(
     }];
   });
   return evaluateMasteryEvidence(dimension, attempts);
+}
+
+export async function evaluateOwnerMastery(
+  db: D1Database,
+  owner: string,
+  dimension: CoachDimension,
+  pending: PendingCoachRecord[] = [],
+): Promise<MasteryEvaluation> {
+  return evaluateMasteryFromHistory(await loadOwnerCoachHistory(db, owner), dimension, pending);
 }
 
 export function masteryEvidencePayload(values: {

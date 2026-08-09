@@ -78,7 +78,11 @@ artifact rather than replacing this chain.
 Every appended Coach Feedback produces a new dimension-specific Mastery
 Evidence snapshot. A later Revision Attempt atomically produces another
 snapshot, so a qualifying revision updates the state even when it arrives after
-the third feedback. The state is:
+the third feedback. Feedback and revisions use an optimistic dimension-history
+gate inside the same database batch as their resulting Mastery Evidence. If a
+concurrent coaching write changes that history, the losing submission
+recomputes its recurrence count and mastery snapshot before retrying; stale or
+partial derived evidence cannot commit. The state is:
 
 - `observed_once` after one qualifying coached attempt;
 - `developing` after more evidence exists but the full threshold is unmet; or

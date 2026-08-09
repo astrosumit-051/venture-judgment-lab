@@ -66,6 +66,7 @@ export type MasteryAttempt = {
   companyIdentity: string;
   feedbackId: string;
   committedAt: string;
+  sequence?: number;
   independentFirstPassConfirmed: boolean;
   foundationalError: boolean;
   genuineDisconfirmingCase: boolean;
@@ -319,7 +320,10 @@ export function evaluateMasteryEvidence(dimension: CoachDimension, input: Master
   const attempts = [...input]
     .filter((attempt) => attempt.independentFirstPassConfirmed)
     .filter((attempt, index, all) => all.findIndex((candidate) => candidate.sourceRecordId === attempt.sourceRecordId) === index)
-    .sort((left, right) => left.committedAt.localeCompare(right.committedAt));
+    .sort((left, right) => {
+      const sequenceDelta = (left.sequence ?? 0) - (right.sequence ?? 0);
+      return sequenceDelta || left.committedAt.localeCompare(right.committedAt) || left.feedbackId.localeCompare(right.feedbackId);
+    });
   const companyByKey = new Map<string, string>();
   for (const attempt of attempts) {
     const display = attempt.companyIdentity.trim();

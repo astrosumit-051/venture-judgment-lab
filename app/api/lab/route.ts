@@ -10,7 +10,15 @@ import { ensureLabSchema } from "@/db/runtime";
 import { FOUNDER_DIMENSIONS, FOUNDER_SOURCE_TYPES } from "@/app/founderEvidence";
 import { configuredAutomationFingerprint } from "@/app/automationAuth";
 import { COACH_RECORD_TYPES, isCoachSource, validateCoachPayload, type CoachDimension } from "@/app/coach";
-import { evaluateOwnerMastery, masteryEvidencePayload } from "@/app/coachPersistence";
+import {
+  coachDimensionHistoryVersion,
+  evaluateMasteryFromHistory,
+  historyHasCoachChild,
+  insertCoachRecordWhenHistoryCurrent,
+  insertCoachRecordWhenTriggerExists,
+  loadOwnerCoachHistory,
+  masteryEvidencePayload,
+} from "@/app/coachPersistence";
 import {
   DILIGENCE_RECORD_TYPES,
   DILIGENCE_STAGE_DEFINITIONS,
@@ -1419,44 +1427,53 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     if (recordType === "revision_attempt") {
       const dimension = cleanText(payload.dimension, 80) as CoachDimension;
-      const evaluation = await evaluateOwnerMastery(db, owner, dimension, [{
-        id,
-        recordType: "revision_attempt",
-        parentId: parentId!,
-        title,
-        payload,
-        committedAt: now,
-      }]);
       const masteryId = crypto.randomUUID();
       const evaluatedOn = cleanText(payload.attemptedOn, 20);
       const timezone = cleanText(payload.timezone, 100);
-      const masteryPayload = masteryEvidencePayload({
-        evaluation,
-        triggerRecordId: id,
-        triggerRecordType: "revision_attempt",
-        evaluatedOn,
-        timezone,
-      });
-      const masteryError = validatePayload("mastery_evidence", masteryPayload);
-      if (masteryError) return Response.json({ error: masteryError }, { status: 400 });
-      try {
-        await db.batch([
-          insertRecord(db, { id, owner, recordType, parentId, title, payload, now }),
-          insertRecord(db, { id: masteryId, owner, recordType: "mastery_evidence", parentId: id, title: `Mastery Evidence — ${dimension.replaceAll("_", " ")}`, payload: masteryPayload, now }),
-        ]);
-      } catch (error) {
-        if (error instanceof Error && error.message.toLowerCase().includes("unique")) {
+      for (let writeAttempt = 0; writeAttempt < 5; writeAttempt += 1) {
+        const history = await loadOwnerCoachHistory(db, owner);
+        if (historyHasCoachChild(history, "revision_attempt", parentId!)) {
           return Response.json({ error: "This Coach Feedback already has a preserved Revision Attempt." }, { status: 409 });
         }
-        throw error;
+        const expectedHistoryVersion = coachDimensionHistoryVersion(history, dimension);
+        const evaluation = evaluateMasteryFromHistory(history, dimension, [{
+          id,
+          recordType: "revision_attempt",
+          parentId: parentId!,
+          title,
+          payload,
+          committedAt: now,
+        }]);
+        const masteryPayload = masteryEvidencePayload({
+          evaluation,
+          triggerRecordId: id,
+          triggerRecordType: "revision_attempt",
+          evaluatedOn,
+          timezone,
+        });
+        const masteryError = validatePayload("mastery_evidence", masteryPayload);
+        if (masteryError) return Response.json({ error: masteryError }, { status: 400 });
+        const writes = await db.batch([
+          insertCoachRecordWhenHistoryCurrent(db, {
+            id, owner, recordType: "revision_attempt", parentId: parentId!, title, payload, now,
+            dimension, expectedHistoryVersion,
+          }),
+          insertCoachRecordWhenTriggerExists(db, {
+            id: masteryId, owner, recordType: "mastery_evidence", parentId: id,
+            title: `Mastery Evidence — ${dimension.replaceAll("_", " ")}`, payload: masteryPayload, now,
+            triggerId: id,
+          }),
+        ]);
+        if (Number(writes[0]?.meta?.changes ?? 0) !== 1 || Number(writes[1]?.meta?.changes ?? 0) !== 1) continue;
+        return Response.json({
+          id,
+          committedAt: now,
+          masteryEvidenceId: masteryId,
+          evidenceState: evaluation.evidenceState,
+          remainingGaps: evaluation.remainingGaps,
+        }, { status: 201 });
       }
-      return Response.json({
-        id,
-        committedAt: now,
-        masteryEvidenceId: masteryId,
-        evidenceState: evaluation.evidenceState,
-        remainingGaps: evaluation.remainingGaps,
-      }, { status: 201 });
+      return Response.json({ error: "Coaching evidence changed concurrently; retry this bounded Revision Attempt." }, { status: 409 });
     }
     try {
       await insertRecord(db, { id, owner, recordType, parentId, title, payload, now }).run();

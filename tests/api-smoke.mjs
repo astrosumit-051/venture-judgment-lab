@@ -820,6 +820,20 @@ const fifthCoachRequest = await post({
   title: "Verification Systems Underwrite Communication — Coach Request",
   payload: coachRequestPayload("Does the communication preserve source reliability?", "The wording may flatten primary and secondary sources.", "communication"),
 });
+const sixthCoachRequest = await post({
+  operation: "commit_record",
+  recordType: "coach_request",
+  parentId: snapshot.id,
+  title: "Verification Systems Snapshot Forecasting — Coach Request",
+  payload: coachRequestPayload("Is the forecast calibrated to its evidence?", "The probability may outrun the observed base rate.", "forecasting"),
+});
+const seventhCoachRequest = await post({
+  operation: "commit_record",
+  recordType: "coach_request",
+  parentId: otherSnapshot.id,
+  title: "Other Verification Co Snapshot Forecasting — Coach Request",
+  payload: coachRequestPayload("Does calibration transfer to another company?", "The forecast may repeat the same calibration error.", "forecasting"),
+});
 
 await post({
   operation: "commit_record",
@@ -1412,10 +1426,10 @@ assert.equal(repeatedRegistration.id, monitorRegistration.id);
 assert.equal(repeatedRegistration.idempotent, true);
 
 const initialCoachQueue = await coachAutomationRequest("GET", undefined, 200);
-assert.equal(initialCoachQueue.queue.length, 5);
+assert.equal(initialCoachQueue.queue.length, 7);
 assert.equal(initialCoachQueue.recurringPatterns.length, 0);
 assert.ok(initialCoachQueue.errorKinds.includes("anecdote_to_generalization"));
-assert.deepEqual(initialCoachQueue.queue.map((item) => item.request.id).sort(), [firstCoachRequest.id, secondCoachRequest.id, thirdCoachRequest.id, fourthCoachRequest.id, fifthCoachRequest.id].sort());
+assert.deepEqual(initialCoachQueue.queue.map((item) => item.request.id).sort(), [firstCoachRequest.id, secondCoachRequest.id, thirdCoachRequest.id, fourthCoachRequest.id, fifthCoachRequest.id, sixthCoachRequest.id, seventhCoachRequest.id].sort());
 const queuedSnapshot = initialCoachQueue.queue.find((item) => item.request.id === firstCoachRequest.id);
 assert.ok(queuedSnapshot);
 assert.equal(queuedSnapshot.source.recordType, "snapshot_judgment");
@@ -1488,6 +1502,22 @@ const fifthCoachFeedback = await coachAutomationRequest("POST", {
   feedback: boundedOtherFeedback("source_hierarchy_flattening", "The wording gives primary and secondary sources equal reliability."),
 }, 201);
 assert.equal(fifthCoachFeedback.recurringErrorCount, 1);
+
+const concurrentCalibrationFeedback = (recurringError) => ({
+  ...coachFeedbackPayload(false, recurringError),
+  recurringErrorKind: "calibration_error",
+});
+const concurrentForecastFeedback = await Promise.all([
+  coachAutomationRequest("POST", {
+    requestId: sixthCoachRequest.id,
+    feedback: concurrentCalibrationFeedback("The probability outruns the observed base rate."),
+  }, 201),
+  coachAutomationRequest("POST", {
+    requestId: seventhCoachRequest.id,
+    feedback: concurrentCalibrationFeedback("The forecast repeats the same calibration failure on another company."),
+  }, 201),
+]);
+assert.deepEqual(concurrentForecastFeedback.map((feedback) => feedback.recurringErrorCount).sort(), [1, 2]);
 
 const coachRevision = await post({
   operation: "commit_record",
@@ -1642,7 +1672,7 @@ assert.equal(currentMonitorState.monitorHealth.missedScheduledRun, false);
 assert.equal(currentMonitorState.opportunities.find((opportunity) => opportunity.officialUrl.includes("4633431005")).status, "Closed");
 
 const final = await fetch(`${baseUrl}/api/lab`, { headers }).then((response) => response.json());
-assert.equal(final.records.length, 55);
+assert.equal(final.records.length, 61);
 assert.equal(final.events.length, 11);
 const lockedSourcingLead = final.records.find((record) => record.id === sourcingLead.id);
 assert.equal(lockedSourcingLead.payload.normalizedCompanyDomain, "verification.example.com");
@@ -1682,15 +1712,23 @@ assert.deepEqual(diligenceStages.map((record) => record.payload.stageKey), ["fou
 assert.equal(diligenceStages.every((record) => record.payload.privacyConfirmed === true), true);
 assert.equal(final.events.filter((event) => event.recordId === diligenceCase.id).length, 1);
 assert.equal(final.events.filter((event) => event.recordId === oralStage.id).length, 1);
-assert.equal(final.records.filter((record) => record.recordType === "coach_request").length, 5);
-assert.equal(final.records.filter((record) => record.recordType === "coach_feedback").length, 5);
+assert.equal(final.records.filter((record) => record.recordType === "coach_request").length, 7);
+assert.equal(final.records.filter((record) => record.recordType === "coach_feedback").length, 7);
+assert.deepEqual(final.records
+  .filter((record) => record.recordType === "coach_feedback" && record.payload.dimension === "forecasting")
+  .map((record) => record.payload.recurringErrorCount)
+  .sort(), [1, 2]);
 assert.equal(final.records.filter((record) => record.recordType === "revision_attempt").length, 1);
 assert.equal(final.records.find((record) => record.id === coachRevision.id).payload.sourceRecordId, snapshot.id);
 const masteryEvidence = final.records.filter((record) => record.recordType === "mastery_evidence");
-assert.equal(masteryEvidence.length, 6);
+assert.equal(masteryEvidence.length, 8);
+assert.deepEqual(masteryEvidence
+  .filter((record) => record.payload.dimension === "forecasting")
+  .map((record) => record.payload.attemptRequestIds.length)
+  .sort(), [1, 2]);
 const corroboratedMastery = masteryEvidence.find((record) => record.payload.evidenceState === "repeated_or_corroborated");
 assert.ok(corroboratedMastery);
 assert.equal(corroboratedMastery.payload.latestTwoClear, true);
 assert.equal(corroboratedMastery.payload.companyIdentities.length, 2);
 
-console.log("API smoke passed: 55 immutable records, 11 append-only events, an exact seven-stage Diligence Case, a bounded owner-isolated Coach round trip with revision-last mastery recomputation, queue-scoped diagnoses, distinct custom recurring-error keys, and append-only correction history, cycle-safe idempotent opportunity monitoring, prospective experiment and forecast boundaries, typed sourcing and recruiting evidence, external-action approval gates, Founder Evidence safeguards, and calibration scoring intact.");
+console.log("API smoke passed: 61 immutable records, 11 append-only events, an exact seven-stage Diligence Case, a bounded owner-isolated Coach round trip with revision-last mastery recomputation, transactional concurrent counts, queue-scoped diagnoses, distinct custom recurring-error keys, and append-only correction history, cycle-safe idempotent opportunity monitoring, prospective experiment and forecast boundaries, typed sourcing and recruiting evidence, external-action approval gates, Founder Evidence safeguards, and calibration scoring intact.");
