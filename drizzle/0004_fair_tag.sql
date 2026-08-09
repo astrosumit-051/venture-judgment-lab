@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX `idx_lab_records_unique_opportunity_monitor_run` ON `lab_records` (`owner_id`, json_extract(`payload_json`, '$.runKey')) WHERE `record_type` = 'opportunity_monitor_run';--> statement-breakpoint
+CREATE UNIQUE INDEX `idx_lab_records_unique_automation_registration` ON `lab_records` (json_extract(`payload_json`, '$.tokenFingerprint')) WHERE `record_type` = 'opportunity_monitor_registration';

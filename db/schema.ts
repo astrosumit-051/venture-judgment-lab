@@ -22,8 +22,8 @@ export const labRecords = sqliteTable(
     uniqueIndex("idx_lab_records_unique_sourcing_domain")
       .on(table.ownerId, sql`json_extract(${table.payloadJson}, '$.normalizedCompanyDomain')`)
       .where(sql`${table.recordType} = 'sourcing_lead'`),
-    uniqueIndex("idx_lab_records_unique_recruiting_opportunity")
-      .on(table.ownerId, sql`json_extract(${table.payloadJson}, '$.normalizedOfficialUrl')`)
+    uniqueIndex("idx_lab_records_unique_recruiting_opportunity_cycle")
+      .on(table.ownerId, sql`json_extract(${table.payloadJson}, '$.recordKey')`)
       .where(sql`${table.recordType} = 'recruiting_opportunity'`),
     uniqueIndex("idx_lab_records_unique_recruiting_child")
       .on(
@@ -33,6 +33,12 @@ export const labRecords = sqliteTable(
         sql`json_extract(${table.payloadJson}, '$.recordKey')`,
       )
       .where(sql`${table.recordType} IN ('opportunity_observation', 'recruiting_interaction', 'application_attempt', 'interview_practice', 'portfolio_candidate')`),
+    uniqueIndex("idx_lab_records_unique_opportunity_monitor_run")
+      .on(table.ownerId, sql`json_extract(${table.payloadJson}, '$.runKey')`)
+      .where(sql`${table.recordType} = 'opportunity_monitor_run'`),
+    uniqueIndex("idx_lab_records_unique_automation_registration")
+      .on(sql`json_extract(${table.payloadJson}, '$.tokenFingerprint')`)
+      .where(sql`${table.recordType} = 'opportunity_monitor_registration'`),
   ],
 );
 

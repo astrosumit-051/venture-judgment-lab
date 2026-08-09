@@ -39,7 +39,7 @@ function text(payload: Record<string, unknown>, key: string): string {
 function manualOpportunity(timezone: string) {
   const today = dateInTimeZone(new Date(), timezone);
   return {
-    firm: "", roleTitle: "", opportunityClass: "Qualifying Internship", funnelClass: "Qualified role",
+    firm: "", roleTitle: "", cycleKey: "", opportunityClass: "Qualifying Internship", funnelClass: "Qualified role",
     officialUrl: "", location: "", workMode: "", discoveredOn: today, verifiedOn: today,
     initialStatus: "Open", publishedDeadline: "", deadlineTimezone: "Not stated",
     compensationEvidence: "", roleScope: "", qualificationReason: "", immigrationState: "Unknown",
@@ -54,6 +54,8 @@ function emptyEvidence(timezone: string) {
     recordType: "opportunity_observation", opportunityId: "", date: today, dueDate: today,
     status: "Open", sourceType: "First-party page", sourceReference: "", materialChange: "",
     opportunityClass: "Qualifying Internship", funnelClass: "Qualified role", immigrationState: "Unknown", immigrationEvidence: "",
+    publishedDeadline: "", deadlineTimezone: "Not stated", compensationEvidence: "",
+    location: "", workMode: "", roleScope: "", qualificationReason: "",
     authorizationClaim: false, nextAction: "", privateEvidenceConfirmed: false,
     interactionKind: "Relationship development", direction: "Inbound", interactionState: "Received",
     counterpartyRole: "", evidenceSummary: "", outcome: "", approvalConfirmed: false,
@@ -85,7 +87,22 @@ export function RecruitingView({ records, timezone, busy, post, announce }: Recr
     () => records.filter((record) => artifactRecordTypes.has(record.recordType)),
     [records],
   );
+  const monitorRegistration = useMemo(
+    () => records.find((record) => record.recordType === "opportunity_monitor_registration"),
+    [records],
+  );
+  const latestMonitorRun = useMemo(
+    () => records
+      .filter((record) => record.recordType === "opportunity_monitor_run")
+      .sort((left, right) => right.committedAt.localeCompare(left.committedAt))[0],
+    [records],
+  );
   const metrics = useMemo(() => computeRecruitingMetrics(records), [records]);
+
+  async function registerMonitor() {
+    const saved = await post({ operation: "register_opportunity_monitor" });
+    if (saved) announce("Official Opportunity Monitor registered to this private learner record. It records evidence only and takes no external action.");
+  }
 
   async function commitOpportunity(payload: Record<string, unknown>, title: string) {
     const saved = await post({ operation: "commit_record", recordType: "recruiting_opportunity", title, payload: { ...payload, timezone } });
@@ -109,6 +126,9 @@ export function RecruitingView({ records, timezone, busy, post, announce }: Recr
       sourceType: evidence.sourceType, sourceReference: evidence.sourceReference, materialChange: evidence.materialChange,
       opportunityClass: evidence.opportunityClass, funnelClass: evidence.funnelClass, immigrationState: evidence.immigrationState,
       immigrationEvidence: evidence.immigrationEvidence, authorizationClaim: evidence.authorizationClaim,
+      publishedDeadline: evidence.publishedDeadline, deadlineTimezone: evidence.deadlineTimezone,
+      compensationEvidence: evidence.compensationEvidence, location: evidence.location, workMode: evidence.workMode,
+      roleScope: evidence.roleScope, qualificationReason: evidence.qualificationReason,
       nextAction: evidence.nextAction, dueDate: evidence.dueDate, privateEvidenceConfirmed: evidence.privateEvidenceConfirmed,
     };
     else if (evidence.recordType === "recruiting_interaction") payload = {
@@ -164,6 +184,24 @@ export function RecruitingView({ records, timezone, busy, post, announce }: Recr
         <article><span>Milestones</span><strong>{metrics.milestones}</strong><small>visible, outside denominator</small></article>
       </div>
 
+      <div className="recruiting-ledger opportunity-monitor-status">
+        <div className="section-heading"><div><span className="eyebrow">Monday · 8:00 AM Eastern</span><h3>Official Opportunity Monitor</h3></div><span className="quiet">Seven first-party targets · append-only</span></div>
+        <article>
+          <div>
+            <span className="eyebrow coral">{monitorRegistration ? "Registered" : "Private registration required"}</span>
+            <h4>{latestMonitorRun ? `Last run · ${text(latestMonitorRun.payload, "runKey").split("|")[1] || "preserved"}` : "No canonical run preserved yet"}</h4>
+            <p>{latestMonitorRun
+              ? (latestMonitorRun.payload.notify ? "Attention condition preserved; inspect the run in History." : "Complete no-change run preserved without an attention alert.")
+              : "Registration binds the private credential to this learner; it does not contact or apply to any firm."}</p>
+          </div>
+          <div>
+            <strong>{monitorRegistration ? "Owner-bound credential active" : "Awaiting owner binding"}</strong>
+            <p>New roles, material changes, source failures, and learner decisions only.</p>
+            <button disabled={busy || Boolean(monitorRegistration)} onClick={() => void registerMonitor()}>{monitorRegistration ? "Monitor registered" : "Register private monitor"}</button>
+          </div>
+        </article>
+      </div>
+
       <div className="recruiting-ledger">
         <div className="section-heading"><div><span className="eyebrow">Current evidence</span><h3>One row per opportunity, latest observation effective.</h3></div><span className="quiet">No prestige score. No activity points.</span></div>
         {!metrics.rows.length ? <p className="empty-copy">Commit a verified target or a manually researched opportunity to begin.</p> : metrics.rows.map((row) => <article key={row.id}>
@@ -187,6 +225,7 @@ export function RecruitingView({ records, timezone, busy, post, announce }: Recr
         <form className="recruiting-card" onSubmit={submitOpportunity}>
           <div className="sourcing-card-head"><span>01</span><div><small>Research intake</small><h3>Recruiting Opportunity</h3></div></div>
           <div className="field-grid two"><label>Firm<input required value={opportunity.firm} onChange={(event) => setOpportunity({ ...opportunity, firm: event.target.value })} /></label><label>Role or program<input required value={opportunity.roleTitle} onChange={(event) => setOpportunity({ ...opportunity, roleTitle: event.target.value })} /></label></div>
+          <label>Cycle identity<input required value={opportunity.cycleKey} onChange={(event) => setOpportunity({ ...opportunity, cycleKey: event.target.value })} placeholder="summer-analyst-2027 or evergreen-role" /><small>A new annual cycle on the same program page receives a new stable identity.</small></label>
           <div className="field-grid two"><label>Class<select value={opportunity.opportunityClass} onChange={(event) => setOpportunity({ ...opportunity, opportunityClass: event.target.value, funnelClass: expectedRecruitingFunnelClass(event.target.value) })}>{OPPORTUNITY_CLASSES.map((value) => <option key={value}>{value}</option>)}</select></label><label>Funnel class<input readOnly value={opportunity.funnelClass} /></label></div>
           <label>First-party URL<input required type="url" value={opportunity.officialUrl} onChange={(event) => setOpportunity({ ...opportunity, officialUrl: event.target.value })} /></label>
           <div className="field-grid two"><label>Location<input required value={opportunity.location} onChange={(event) => setOpportunity({ ...opportunity, location: event.target.value })} /></label><label>Work mode<input required value={opportunity.workMode} onChange={(event) => setOpportunity({ ...opportunity, workMode: event.target.value })} /></label></div>
@@ -205,7 +244,7 @@ export function RecruitingView({ records, timezone, busy, post, announce }: Recr
         <form className="recruiting-card" onSubmit={submitEvidence}>
           <div className="sourcing-card-head"><span>02</span><div><small>Append-only child record</small><h3>Dated recruiting evidence</h3></div></div>
           <label>Evidence type<select value={evidence.recordType} onChange={(event) => setEvidence({ ...emptyEvidence(timezone), recordType: event.target.value })}>{Object.entries(evidenceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-          <label>Opportunity<select required value={evidence.opportunityId} onChange={(event) => { const row = metrics.rows.find((item) => item.id === event.target.value); setEvidence({ ...evidence, opportunityId: event.target.value, opportunityClass: row?.opportunityClass ?? evidence.opportunityClass, funnelClass: row?.funnelClass ?? evidence.funnelClass, immigrationState: row?.immigrationState ?? evidence.immigrationState, authorizationClaim: row?.immigrationState === "Authorized" }); }}><option value="">Choose an opportunity…</option>{opportunities.map((record) => <option key={record.id} value={record.id}>{text(record.payload, "firm")} · {text(record.payload, "roleTitle")}</option>)}</select></label>
+          <label>Opportunity<select required value={evidence.opportunityId} onChange={(event) => { const row = metrics.rows.find((item) => item.id === event.target.value); setEvidence({ ...evidence, opportunityId: event.target.value, status: row?.currentStatus ?? evidence.status, opportunityClass: row?.opportunityClass ?? evidence.opportunityClass, funnelClass: row?.funnelClass ?? evidence.funnelClass, publishedDeadline: row?.publishedDeadline ?? evidence.publishedDeadline, deadlineTimezone: row?.deadlineTimezone ?? evidence.deadlineTimezone, compensationEvidence: row?.compensationEvidence ?? evidence.compensationEvidence, location: row?.location ?? evidence.location, workMode: row?.workMode ?? evidence.workMode, roleScope: row?.roleScope ?? evidence.roleScope, qualificationReason: row?.qualificationReason ?? evidence.qualificationReason, immigrationState: row?.immigrationState ?? evidence.immigrationState, immigrationEvidence: row?.immigrationEvidence ?? evidence.immigrationEvidence, authorizationClaim: row?.immigrationState === "Authorized", nextAction: row?.nextAction ?? evidence.nextAction, dueDate: row?.dueDate ?? evidence.dueDate }); }}><option value="">Choose an opportunity…</option>{opportunities.map((record) => <option key={record.id} value={record.id}>{text(record.payload, "firm")} · {text(record.payload, "roleTitle")}</option>)}</select></label>
           <label>Evidence date<input required type="date" value={evidence.date} onChange={(event) => setEvidence({ ...evidence, date: event.target.value })} /></label>
 
           {evidence.recordType === "opportunity_observation" && <>
@@ -214,6 +253,11 @@ export function RecruitingView({ records, timezone, busy, post, announce }: Recr
             <label>Source type<select value={evidence.sourceType} onChange={(event) => setEvidence({ ...evidence, sourceType: event.target.value })}>{OPPORTUNITY_SOURCE_TYPES.map((value) => <option key={value}>{value}</option>)}</select></label>
             <label>Source reference<input required value={evidence.sourceReference} onChange={(event) => setEvidence({ ...evidence, sourceReference: event.target.value })} placeholder="First-party URL or concise private evidence reference" /></label>
             <label>Material change<textarea required rows={2} value={evidence.materialChange} onChange={(event) => setEvidence({ ...evidence, materialChange: event.target.value })} /></label>
+            <div className="field-grid two"><label>Published deadline<input type="date" value={evidence.publishedDeadline} onChange={(event) => setEvidence({ ...evidence, publishedDeadline: event.target.value })} /></label><label>Deadline timezone<input required value={evidence.deadlineTimezone} onChange={(event) => setEvidence({ ...evidence, deadlineTimezone: event.target.value })} /></label></div>
+            <label>Compensation evidence<textarea required rows={2} value={evidence.compensationEvidence} onChange={(event) => setEvidence({ ...evidence, compensationEvidence: event.target.value })} placeholder="State the first-party pay evidence or that compensation is not established." /></label>
+            <div className="field-grid two"><label>Location<input required value={evidence.location} onChange={(event) => setEvidence({ ...evidence, location: event.target.value })} /></label><label>Work mode<input required value={evidence.workMode} onChange={(event) => setEvidence({ ...evidence, workMode: event.target.value })} /></label></div>
+            <label>Role scope<textarea required rows={2} value={evidence.roleScope} onChange={(event) => setEvidence({ ...evidence, roleScope: event.target.value })} /></label>
+            <label>Qualification reason<textarea required rows={2} value={evidence.qualificationReason} onChange={(event) => setEvidence({ ...evidence, qualificationReason: event.target.value })} /></label>
             <label>Immigration evidence state<select value={evidence.immigrationState} onChange={(event) => setEvidence({ ...evidence, immigrationState: event.target.value, authorizationClaim: event.target.value === "Authorized" })}>{IMMIGRATION_EVIDENCE_STATES.map((value) => <option key={value}>{value}</option>)}</select></label>
             <label>Immigration evidence<textarea required rows={2} value={evidence.immigrationEvidence} onChange={(event) => setEvidence({ ...evidence, immigrationEvidence: event.target.value })} /></label>
           </>}

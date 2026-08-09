@@ -236,6 +236,8 @@ function recordLabel(type: string): string {
     sourcing_lead: "Sourcing Lead",
     recruiting_opportunity: "Recruiting Opportunity",
     opportunity_observation: "Opportunity Observation",
+    opportunity_monitor_registration: "Opportunity Monitor Registration",
+    opportunity_monitor_run: "Opportunity Monitor Run",
     recruiting_interaction: "Recruiting Interaction",
     application_attempt: "Application Attempt",
     interview_practice: "Interview Practice",
@@ -270,6 +272,8 @@ function recordSummary(record: LabRecord): string {
   if (record.recordType === "sourcing_lead") return textValue(record.payload, "qualificationThesis");
   if (record.recordType === "recruiting_opportunity") return `${textValue(record.payload, "initialStatus")} · ${textValue(record.payload, "qualificationReason")}`;
   if (record.recordType === "opportunity_observation") return `${textValue(record.payload, "status")} · ${textValue(record.payload, "materialChange")}`;
+  if (record.recordType === "opportunity_monitor_registration") return `${textValue(record.payload, "schedule")} · ${textValue(record.payload, "status")}`;
+  if (record.recordType === "opportunity_monitor_run") return `${textValue(record.payload, "runKey")} · ${record.payload.notify ? "attention required" : "no material change"}`;
   if (record.recordType === "recruiting_interaction") return `${textValue(record.payload, "interactionState")} · ${textValue(record.payload, "outcome")}`;
   if (record.recordType === "application_attempt") return `${textValue(record.payload, "attemptState")} · ${textValue(record.payload, "nextAction")}`;
   if (record.recordType === "interview_practice") return textValue(record.payload, "independentAnswerSummary");
@@ -354,7 +358,21 @@ function keyEvidence(record: LabRecord): Array<[string, string]> {
   if (record.recordType === "opportunity_observation") return [
     ["Status", `${textValue(p, "status")} · ${textValue(p, "funnelClass")}`],
     ["Material change", textValue(p, "materialChange")],
+    ["Deadline", `${textValue(p, "publishedDeadline") || "Not stated"} · ${textValue(p, "deadlineTimezone")}`],
+    ["Compensation evidence", textValue(p, "compensationEvidence")],
+    ["Role evidence", `${textValue(p, "location")} · ${textValue(p, "workMode")} · ${textValue(p, "roleScope")}`],
+    ["Qualification", textValue(p, "qualificationReason")],
     ["Immigration evidence", `${textValue(p, "immigrationState")} · ${textValue(p, "immigrationEvidence")}`],
+  ];
+  if (record.recordType === "opportunity_monitor_registration") return [
+    ["Schedule", textValue(p, "schedule")],
+    ["State", textValue(p, "status")],
+    ["Privacy", "Owner-bound credential fingerprint; no secret preserved"],
+  ];
+  if (record.recordType === "opportunity_monitor_run") return [
+    ["Run", `${textValue(p, "runKey")} · ${textValue(p, "scheduledFor")}`],
+    ["Notification", p.notify ? "New, changed, failed, or decision-required evidence" : "Complete no-change run"],
+    ["Boundary", "Evidence only; no outreach, application, or publication"],
   ];
   if (record.recordType === "recruiting_interaction") return [
     ["Interaction", `${textValue(p, "direction")} ${textValue(p, "interactionKind")} · ${textValue(p, "interactionState")}`],
@@ -1002,7 +1020,7 @@ export function LabApp({ displayName }: { displayName: string }) {
         {view === "history" && (
           <section className="view">
             <div className="intro-row"><div><span className="eyebrow coral">Private Learning Record</span><h2>Originals stay. Updates accumulate.</h2></div><p>Resolve Forecasts, record corrections, and add hindsight here. Nothing below edits the evidence you committed earlier.</p></div>
-            <div className="history-tools"><label>Show<select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value)}><option value="all">All records</option><option value="daily_brief">Daily Briefs</option><option value="sourcing_experiment">Sourcing Experiments</option><option value="sourcing_lead">Sourcing Leads</option><option value="recruiting_opportunity">Recruiting Opportunities</option><option value="opportunity_observation">Opportunity Observations</option><option value="recruiting_interaction">Recruiting Interactions</option><option value="application_attempt">Application Attempts</option><option value="interview_practice">Interview Practice</option><option value="portfolio_candidate">Portfolio Candidates</option><option value="snapshot_judgment">Snapshots</option><option value="forecast">Forecasts</option><option value="second_order_map">Second-Order Maps</option><option value="founder_evidence_review">Founder Evidence Reviews</option><option value="weekly_underwrite">Underwrites</option><option value="calibration_review">Calibration Reviews</option><option value="weekly_plan">Practice plans</option></select></label><span>{filteredRecords.length} immutable submission{filteredRecords.length === 1 ? "" : "s"}</span></div>
+            <div className="history-tools"><label>Show<select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value)}><option value="all">All records</option><option value="daily_brief">Daily Briefs</option><option value="sourcing_experiment">Sourcing Experiments</option><option value="sourcing_lead">Sourcing Leads</option><option value="recruiting_opportunity">Recruiting Opportunities</option><option value="opportunity_observation">Opportunity Observations</option><option value="opportunity_monitor_run">Opportunity Monitor Runs</option><option value="opportunity_monitor_registration">Opportunity Monitor Registration</option><option value="recruiting_interaction">Recruiting Interactions</option><option value="application_attempt">Application Attempts</option><option value="interview_practice">Interview Practice</option><option value="portfolio_candidate">Portfolio Candidates</option><option value="snapshot_judgment">Snapshots</option><option value="forecast">Forecasts</option><option value="second_order_map">Second-Order Maps</option><option value="founder_evidence_review">Founder Evidence Reviews</option><option value="weekly_underwrite">Underwrites</option><option value="calibration_review">Calibration Reviews</option><option value="weekly_plan">Practice plans</option></select></label><span>{filteredRecords.length} immutable submission{filteredRecords.length === 1 ? "" : "s"}</span></div>
             <div className="history-layout">
               <div className="timeline">
                 {loading && <div className="empty-history"><p>Opening your private record…</p></div>}

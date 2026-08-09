@@ -8,9 +8,11 @@ import {
 } from "@/app/calibration";
 import { ensureLabSchema } from "@/db/runtime";
 import { FOUNDER_DIMENSIONS, FOUNDER_SOURCE_TYPES } from "@/app/founderEvidence";
+import { configuredAutomationFingerprint } from "@/app/automationAuth";
 import {
   normalizeRecruitingUrl,
   expectedRecruitingFunnelClass,
+  legacyRecruitingCycleKey,
   portfolioArtifactTypeForRecord,
   PORTFOLIO_SOURCE_RECORD_TYPES,
   RECRUITING_CHILD_RECORD_TYPES,
@@ -437,6 +439,66 @@ export async function POST(request: Request) {
 
   const db = await ensureLabSchema();
   const operation = cleanText(body.operation, 40);
+
+  if (operation === "register_opportunity_monitor") {
+    const fingerprint = await configuredAutomationFingerprint();
+    if (!fingerprint) {
+      return Response.json({ error: "The private automation credential is not configured in this runtime." }, { status: 503 });
+    }
+    const existingOwnerRegistration = await db
+      .prepare(
+        `SELECT id FROM lab_records WHERE owner_id = ? AND record_type = 'opportunity_monitor_registration'
+         AND json_extract(payload_json, '$.automationKind') = 'opportunity_monitor' LIMIT 1`,
+      )
+      .bind(owner)
+      .first<{ id: string }>();
+    if (existingOwnerRegistration) return Response.json({ id: existingOwnerRegistration.id, registered: true, idempotent: true });
+    const existingFingerprint = await db
+      .prepare(
+        `SELECT id FROM lab_records WHERE record_type = 'opportunity_monitor_registration'
+         AND json_extract(payload_json, '$.tokenFingerprint') = ? LIMIT 1`,
+      )
+      .bind(fingerprint)
+      .first<{ id: string }>();
+    if (existingFingerprint) {
+      return Response.json({ error: "This automation credential is already registered to another private owner." }, { status: 409 });
+    }
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    try {
+      await insertRecord(db, {
+        id,
+        owner,
+        recordType: "opportunity_monitor_registration",
+        parentId: null,
+        title: "Official Opportunity Monitor — private registration",
+        payload: {
+          automationKind: "opportunity_monitor",
+          tokenFingerprint: fingerprint,
+          registeredAt: now,
+          schedule: "Monday 8:00 AM America/New_York",
+          status: "active",
+        },
+        now,
+      }).run();
+    } catch (error) {
+      if (error instanceof Error && error.message.toLowerCase().includes("unique")) {
+        const racedRegistration = await db
+          .prepare(
+            `SELECT id, owner_id FROM lab_records WHERE record_type = 'opportunity_monitor_registration'
+             AND json_extract(payload_json, '$.tokenFingerprint') = ? LIMIT 1`,
+          )
+          .bind(fingerprint)
+          .first<{ id: string; owner_id: string }>();
+        if (racedRegistration?.owner_id === owner) {
+          return Response.json({ id: racedRegistration.id, registered: true, idempotent: true });
+        }
+        return Response.json({ error: "This automation credential is already registered to another private owner." }, { status: 409 });
+      }
+      throw error;
+    }
+    return Response.json({ id, registered: true, idempotent: false }, { status: 201 });
+  }
 
   if (operation === "commit_daily_brief") {
     const briefVersion = cleanText(body.briefVersion, 80);
@@ -1103,9 +1165,19 @@ export async function POST(request: Request) {
       const duplicate = await db.prepare(
         `SELECT id FROM lab_records
          WHERE owner_id = ? AND record_type = 'recruiting_opportunity'
-         AND json_extract(payload_json, '$.normalizedOfficialUrl') = ? LIMIT 1`,
-      ).bind(owner, cleanText(payload.normalizedOfficialUrl, 2000)).first<{ id: string }>();
-      if (duplicate) return Response.json({ error: "This Recruiting Opportunity already exists; add a dated Opportunity Observation instead." }, { status: 409 });
+         AND json_extract(payload_json, '$.recordKey') = ? LIMIT 1`,
+      ).bind(owner, cleanText(payload.recordKey, 5000)).first<{ id: string }>();
+      if (duplicate) return Response.json({ error: "This Recruiting Opportunity cycle already exists; add a dated Opportunity Observation instead." }, { status: 409 });
+      const legacyDuplicates = await db.prepare(
+        `SELECT id, payload_json FROM lab_records
+         WHERE owner_id = ? AND record_type = 'recruiting_opportunity'
+         AND json_extract(payload_json, '$.normalizedOfficialUrl') = ?
+         AND coalesce(json_extract(payload_json, '$.cycleKey'), '') = ''`,
+      ).bind(owner, cleanText(payload.normalizedOfficialUrl, 2000)).all<{ id: string; payload_json: string }>();
+      const legacyDuplicate = (legacyDuplicates.results ?? []).find((row) => (
+        legacyRecruitingCycleKey(parseJson(row.payload_json)) === cleanText(payload.cycleKey, 120)
+      ));
+      if (legacyDuplicate) return Response.json({ error: "This known legacy Recruiting Opportunity already represents the same role cycle; add a dated Observation or a genuinely new cycle." }, { status: 409 });
     }
     if (isRecruitingChild) {
       const duplicate = await db.prepare(
@@ -1149,6 +1221,9 @@ export async function POST(request: Request) {
     }
     if ((RECRUITING_RECORD_TYPES as readonly string[]).includes(parent.record_type)) {
       return Response.json({ error: "Append Recruiting evidence through the typed Recruiting workspace so dates, approvals, and funnel integrity are preserved." }, { status: 400 });
+    }
+    if (parent.record_type === "opportunity_monitor_run" || parent.record_type === "opportunity_monitor_registration") {
+      return Response.json({ error: "Opportunity Monitor evidence is immutable and can be created only through its bounded registration and run workflows." }, { status: 400 });
     }
     if (parent.record_type === "founder_evidence_review") {
       const allowedFounderEventKeys = new Set(["text", "originalPreserved", "privateEvidenceConfirmed"]);

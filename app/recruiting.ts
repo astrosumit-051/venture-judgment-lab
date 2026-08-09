@@ -74,6 +74,7 @@ export type RecruitingRecordLike = {
 export type RecruitingTargetSeed = {
   firm: string;
   roleTitle: string;
+  cycleKey: string;
   opportunityClass: typeof OPPORTUNITY_CLASSES[number];
   funnelClass: typeof RECRUITING_FUNNEL_CLASSES[number];
   officialUrl: string;
@@ -100,6 +101,7 @@ export const RECRUITING_TARGET_SEEDS: RecruitingTargetSeed[] = [
   {
     firm: "Bessemer Venture Partners",
     roleTitle: "Summer Analyst 2027",
+    cycleKey: "summer-analyst-2027",
     opportunityClass: "Qualifying Internship",
     funnelClass: "Qualified role",
     officialUrl: "https://job-boards.greenhouse.io/bvpanalyst/jobs/4633431005",
@@ -124,6 +126,7 @@ export const RECRUITING_TARGET_SEEDS: RecruitingTargetSeed[] = [
   {
     firm: "Pear VC",
     roleTitle: "Pear Fellows 2026–2027",
+    cycleKey: "pear-fellows-2026-2027",
     opportunityClass: "Investing Milestone",
     funnelClass: "Milestone",
     officialUrl: "https://pear.vc/programs/dorm/fellows/",
@@ -148,6 +151,7 @@ export const RECRUITING_TARGET_SEEDS: RecruitingTargetSeed[] = [
   {
     firm: "Dorm Room Fund",
     roleTitle: "Philly & Southeast Investment Partner",
+    cycleKey: "investment-partner-2026-2027",
     opportunityClass: "Investing Milestone",
     funnelClass: "Milestone",
     officialUrl: "https://join.dormroomfund.com/",
@@ -172,6 +176,7 @@ export const RECRUITING_TARGET_SEEDS: RecruitingTargetSeed[] = [
   {
     firm: "Keyhorse Capital",
     roleTitle: "Summer 2027 investment inquiry",
+    cycleKey: "summer-2027-inquiry",
     opportunityClass: "Relationship-led target",
     funnelClass: "Relationship target",
     officialUrl: "https://www.keyhorse.vc/careers",
@@ -195,9 +200,17 @@ export const RECRUITING_TARGET_SEEDS: RecruitingTargetSeed[] = [
   },
 ];
 
+export function legacyRecruitingCycleKey(payload: Record<string, unknown>): string {
+  const normalizedUrl = text(payload, "normalizedOfficialUrl") || normalizeRecruitingUrl(payload.officialUrl);
+  const roleTitle = text(payload, "roleTitle");
+  return RECRUITING_TARGET_SEEDS.find((seed) => (
+    seed.normalizedOfficialUrl === normalizedUrl && seed.roleTitle === roleTitle
+  ))?.cycleKey ?? "";
+}
+
 const requiredKeys: Record<RecruitingRecordType, readonly string[]> = {
   recruiting_opportunity: [
-    "firm", "roleTitle", "opportunityClass", "funnelClass", "officialUrl", "normalizedOfficialUrl",
+    "firm", "roleTitle", "cycleKey", "opportunityClass", "funnelClass", "officialUrl", "normalizedOfficialUrl",
     "location", "workMode", "discoveredOn", "verifiedOn", "timezone", "initialStatus",
     "deadlineTimezone", "compensationEvidence", "roleScope", "qualificationReason",
     "immigrationState", "immigrationEvidence", "authorizationClaim", "nextAction", "dueDate",
@@ -205,7 +218,9 @@ const requiredKeys: Record<RecruitingRecordType, readonly string[]> = {
   opportunity_observation: [
     "opportunityId", "observedOn", "timezone", "status", "sourceType", "sourceReference",
     "materialChange", "opportunityClass", "funnelClass", "immigrationState", "immigrationEvidence",
-    "authorizationClaim", "nextAction", "dueDate", "privateEvidenceConfirmed",
+    "authorizationClaim", "deadlineTimezone", "compensationEvidence", "location", "workMode",
+    "roleScope", "qualificationReason", "nextAction", "dueDate",
+    "privateEvidenceConfirmed",
   ],
   recruiting_interaction: [
     "opportunityId", "interactionKind", "direction", "interactionState", "occurredOn", "timezone",
@@ -287,8 +302,11 @@ export function validateRecruitingPayload(
   if (!isValidTimeZone(payload.timezone)) return "Recruiting evidence needs a valid preserved timezone.";
 
   if (type === "recruiting_opportunity") {
-    if (!boundedText(payload, ["firm", "roleTitle", "location", "workMode", "compensationEvidence", "roleScope", "qualificationReason", "immigrationEvidence", "nextAction"])) {
+    if (!boundedText(payload, ["firm", "roleTitle", "cycleKey", "location", "workMode", "compensationEvidence", "roleScope", "qualificationReason", "immigrationEvidence", "nextAction"])) {
       return "A Recruiting Opportunity needs bounded identity, classification, evidence, and next-action fields.";
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(text(payload, "cycleKey")) || text(payload, "cycleKey").length > 120) {
+      return "A Recruiting Opportunity needs a stable lowercase role-or-cycle identity.";
     }
     if (!(OPPORTUNITY_CLASSES as readonly string[]).includes(text(payload, "opportunityClass"))) return "Choose a valid Recruiting Opportunity class.";
     if (!(RECRUITING_FUNNEL_CLASSES as readonly string[]).includes(text(payload, "funnelClass"))) return "Choose a truthful Recruiting funnel class.";
@@ -314,7 +332,9 @@ export function validateRecruitingPayload(
     if (text(payload, "funnelClass") !== "Archived" && text(payload, "funnelClass") !== expectedRecruitingFunnelClass(text(payload, "opportunityClass"))) {
       return "An Opportunity Observation's funnel class must match its evidence-backed opportunity class or be Archived.";
     }
-    if (!boundedText(payload, ["sourceReference", "materialChange", "immigrationEvidence", "nextAction"])) return "An Opportunity Observation needs bounded source, change, immigration, and next-action evidence.";
+    if (!boundedText(payload, ["sourceReference", "materialChange", "immigrationEvidence", "location", "workMode", "roleScope", "qualificationReason", "nextAction"])) return "An Opportunity Observation needs bounded source, change, qualification, and next-action evidence.";
+    if (!boundedText(payload, ["deadlineTimezone", "compensationEvidence"])) return "An Opportunity Observation needs bounded deadline-timezone and compensation evidence.";
+    if (hasValue(payload.publishedDeadline) && !isCanonicalDate(payload.publishedDeadline)) return "An observed opportunity deadline must be a real YYYY-MM-DD date.";
     if (payload.sourceType === "First-party page" && !safeHttpUrl(payload.sourceReference)) return "A first-party Opportunity Observation needs its official source URL.";
     if (payload.sourceType === "Private recruiting evidence" && payload.privateEvidenceConfirmed !== true) return "Private recruiting evidence requires confirmation that raw correspondence and contact details were omitted.";
   }
@@ -386,7 +406,10 @@ export function validateRecruitingPayload(
 }
 
 export function recruitingRecordKey(recordType: string, payload: Record<string, unknown>): string {
-  if (recordType === "recruiting_opportunity") return text(payload, "normalizedOfficialUrl");
+  if (recordType === "recruiting_opportunity") {
+    const cycleKey = text(payload, "cycleKey") || legacyRecruitingCycleKey(payload);
+    return `${text(payload, "normalizedOfficialUrl")}|${cycleKey}`;
+  }
   if ((RECRUITING_CHILD_RECORD_TYPES as readonly string[]).includes(recordType)) {
     return `${recordType}|${recruitingPayloadFingerprint(payload)}`;
   }
@@ -452,7 +475,15 @@ export type RecruitingMetrics = {
     opportunityClass: string;
     funnelClass: string;
     currentStatus: string;
+    publishedDeadline: string;
+    deadlineTimezone: string;
+    compensationEvidence: string;
+    location: string;
+    workMode: string;
+    roleScope: string;
+    qualificationReason: string;
     immigrationState: string;
+    immigrationEvidence: string;
     nextAction: string;
     dueDate: string;
   }>;
@@ -478,7 +509,15 @@ export function computeRecruitingMetrics(records: RecruitingRecordLike[]): Recru
       opportunityClass: (latest && text(latest.payload, "opportunityClass")) || text(opportunity.payload, "opportunityClass"),
       funnelClass: (latest && text(latest.payload, "funnelClass")) || text(opportunity.payload, "funnelClass"),
       currentStatus: latest ? text(latest.payload, "status") : text(opportunity.payload, "initialStatus"),
+      publishedDeadline: latest ? text(latest.payload, "publishedDeadline") : text(opportunity.payload, "publishedDeadline"),
+      deadlineTimezone: (latest && text(latest.payload, "deadlineTimezone")) || text(opportunity.payload, "deadlineTimezone"),
+      compensationEvidence: (latest && text(latest.payload, "compensationEvidence")) || text(opportunity.payload, "compensationEvidence"),
+      location: (latest && text(latest.payload, "location")) || text(opportunity.payload, "location"),
+      workMode: (latest && text(latest.payload, "workMode")) || text(opportunity.payload, "workMode"),
+      roleScope: (latest && text(latest.payload, "roleScope")) || text(opportunity.payload, "roleScope"),
+      qualificationReason: (latest && text(latest.payload, "qualificationReason")) || text(opportunity.payload, "qualificationReason"),
       immigrationState: (latest && text(latest.payload, "immigrationState")) || text(opportunity.payload, "immigrationState"),
+      immigrationEvidence: (latest && text(latest.payload, "immigrationEvidence")) || text(opportunity.payload, "immigrationEvidence"),
       nextAction: (latest && text(latest.payload, "nextAction")) || text(opportunity.payload, "nextAction"),
       dueDate: (latest && text(latest.payload, "dueDate")) || text(opportunity.payload, "dueDate"),
     };

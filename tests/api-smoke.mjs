@@ -33,6 +33,21 @@ async function post(body, expected = 201) {
   return result;
 }
 
+const automationToken = process.env.LAB_AUTOMATION_TOKEN ?? "local-opportunity-monitor-verification-token";
+async function automationRequest(method, body, expected, token = automationToken) {
+  const response = await fetch(`${baseUrl}/api/automation/opportunities`, {
+    method,
+    headers: {
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const result = await response.json();
+  assert.equal(response.status, expected, JSON.stringify(result));
+  return result;
+}
+
 const initial = await fetch(`${baseUrl}/api/lab`, { headers }).then((response) => response.json());
 assert.deepEqual(initial, { records: [], events: [] });
 
@@ -786,6 +801,7 @@ await post({
 const recruitingOpportunityPayload = {
   firm: "Verification Ventures",
   roleTitle: "Summer Investor 2027",
+  cycleKey: "summer-investor-2027",
   opportunityClass: "Qualifying Internship",
   funnelClass: "Qualified role",
   officialUrl: `https://example.com/recruiting/${suffix}`,
@@ -828,6 +844,13 @@ await post({
   payload: { ...recruitingOpportunityPayload, officialUrl: `${recruitingOpportunityPayload.officialUrl}/` },
 }, 409);
 
+const nextCycleOpportunity = await post({
+  operation: "commit_record",
+  recordType: "recruiting_opportunity",
+  title: "Verification Ventures — Summer Investor 2028",
+  payload: { ...recruitingOpportunityPayload, roleTitle: "Summer Investor 2028", cycleKey: "summer-investor-2028" },
+});
+
 const observationPayload = {
   opportunityId: recruitingOpportunity.id,
   observedOn: todayInChicago,
@@ -838,6 +861,13 @@ const observationPayload = {
   materialChange: "A synthetic offer state verifies the typed current-status overlay.",
   opportunityClass: "Qualifying Internship",
   funnelClass: "Qualified role",
+  publishedDeadline: "",
+  deadlineTimezone: "Not stated",
+  compensationEvidence: "$1,000 per week in this synthetic verification role.",
+  location: "New York, NY",
+  workMode: "On site",
+  roleScope: "Sourcing, diligence, and direct investment-team exposure.",
+  qualificationReason: "A paid direct-investing internship used to verify the qualified-role denominator.",
   immigrationState: "Employer-compatible",
   immigrationEvidence: "The employer-side synthetic constraints are compatible; authorization remains unclaimed.",
   authorizationClaim: false,
@@ -1069,8 +1099,124 @@ await post({
   eventData: { text: "Generic append must be rejected.", originalPreserved: true },
 }, 400);
 
+await automationRequest("GET", undefined, 401, "");
+await automationRequest("GET", undefined, 401, "wrong-opportunity-monitor-token");
+
+const monitorRegistration = await post({ operation: "register_opportunity_monitor" });
+assert.equal(monitorRegistration.registered, true);
+assert.equal(monitorRegistration.idempotent, false);
+const repeatedRegistration = await post({ operation: "register_opportunity_monitor" }, 200);
+assert.equal(repeatedRegistration.id, monitorRegistration.id);
+assert.equal(repeatedRegistration.idempotent, true);
+
+const monitorState = await automationRequest("GET", undefined, 200);
+assert.equal(monitorState.targets.length, 7);
+assert.equal(monitorState.lastRun, null);
+assert.equal(monitorState.monitorHealth.missedScheduledRun, true);
+
+const targetKeys = monitorState.targets.map((target) => target.key);
+const bessemerSnapshot = {
+  targetKey: "bessemer-analyst-program",
+  firm: "Bessemer Venture Partners",
+  roleTitle: "Summer Analyst 2027",
+  cycleKey: "summer-analyst-2027",
+  officialUrl: "https://job-boards.greenhouse.io/bvpanalyst/jobs/4633431005",
+  location: "New York, NY",
+  workMode: "On site",
+  status: "Open",
+  opportunityClass: "Qualifying Internship",
+  funnelClass: "Qualified role",
+  publishedDeadline: "",
+  deadlineTimezone: "Not stated",
+  compensationEvidence: "$2,200 per week plus a $5,000 stipend on the first-party role page.",
+  roleScope: "Sourcing, diligence, and investment-team work with direct founder exposure.",
+  qualificationReason: "A paid direct-investing internship with recurring sourcing and diligence exposure.",
+  immigrationState: "Unknown",
+  immigrationEvidence: "The application asks about visa status but does not establish role-specific work authorization.",
+  authorizationClaim: false,
+  nextAction: "Complete a factual application review; do not submit without explicit learner approval.",
+  dueDate: "2026-08-09",
+  observedOn: "2026-08-02",
+  timezone: "America/Chicago",
+  decisionRequired: false,
+  decisionReason: "",
+};
+function monitorChecks(checkedAt, snapshot = bessemerSnapshot) {
+  return targetKeys.map((targetKey) => ({
+    targetKey,
+    checkedAt,
+    outcome: "reachable",
+    failureCode: "",
+    failureSummary: "",
+    snapshots: targetKey === "bessemer-analyst-program" ? [snapshot] : [],
+  }));
+}
+
+const firstMonitorInput = {
+  scheduledFor: "2026-07-27T12:00:00.000Z",
+  checks: monitorChecks("2026-08-02T15:00:00.000Z"),
+};
+const firstMonitorRun = await automationRequest("POST", firstMonitorInput, 201);
+assert.equal(firstMonitorRun.idempotent, false);
+assert.equal(firstMonitorRun.checks.length, 7);
+assert.equal(firstMonitorRun.checks.every((check) => check.checkedAt === "2026-08-02T15:00:00.000Z"), true);
+assert.equal(firstMonitorRun.createdOpportunityIds.length, 1);
+assert.equal(firstMonitorRun.observationIds.length, 0);
+assert.equal(firstMonitorRun.notify, true);
+assert.deepEqual(firstMonitorRun.notificationReasons, ["1 new opportunity"]);
+
+const replayedMonitorRun = await automationRequest("POST", firstMonitorInput, 200);
+assert.equal(replayedMonitorRun.id, firstMonitorRun.id);
+assert.equal(replayedMonitorRun.idempotent, true);
+await automationRequest("POST", {
+  ...firstMonitorInput,
+  checks: monitorChecks("2026-08-02T15:00:00.000Z", { ...bessemerSnapshot, nextAction: "Conflicting replay evidence." }),
+}, 409);
+
+const changedBessemerSnapshot = {
+  ...bessemerSnapshot,
+  status: "Closed",
+  compensationEvidence: "The previously published $2,200 weekly pay and $5,000 stipend are retained as historical evidence.",
+  nextAction: "Preserve closure and pursue only a later cycle if first-party evidence reopens.",
+  dueDate: "2026-08-15",
+  observedOn: "2026-08-08",
+};
+const secondMonitorInput = {
+  scheduledFor: "2026-08-03T12:00:00.000Z",
+  checks: monitorChecks("2026-08-08T15:00:00.000Z", changedBessemerSnapshot),
+};
+const secondMonitorRun = await automationRequest("POST", secondMonitorInput, 201);
+assert.equal(secondMonitorRun.createdOpportunityIds.length, 0);
+assert.equal(secondMonitorRun.observationIds.length, 1);
+assert.deepEqual(secondMonitorRun.notificationReasons, ["1 material change"]);
+
+await automationRequest("POST", { ...secondMonitorInput, scheduledFor: "2026-08-04T12:00:00.000Z" }, 400);
+await automationRequest("POST", { ...secondMonitorInput, checks: secondMonitorInput.checks.slice(1) }, 400);
+await automationRequest("POST", {
+  ...secondMonitorInput,
+  checks: monitorChecks("2026-08-08T15:00:00.000Z", { ...changedBessemerSnapshot, officialUrl: "https://example.com/not-first-party" }),
+}, 400);
+await automationRequest("POST", {
+  ...secondMonitorInput,
+  checks: secondMonitorInput.checks.map((check) => check.targetKey === "keyhorse-careers"
+    ? { ...check, outcome: "failure", failureCode: "parse_failure", failureSummary: "Bounded failure.", snapshots: [changedBessemerSnapshot] }
+    : check),
+}, 400);
+
+await post({
+  operation: "append_event",
+  recordId: secondMonitorRun.id,
+  eventType: "reflection",
+  eventData: { text: "Generic mutation must be rejected.", originalPreserved: true },
+}, 400);
+
+const currentMonitorState = await automationRequest("GET", undefined, 200);
+assert.equal(currentMonitorState.lastRun.id, secondMonitorRun.id);
+assert.equal(currentMonitorState.monitorHealth.missedScheduledRun, false);
+assert.equal(currentMonitorState.opportunities.find((opportunity) => opportunity.officialUrl.includes("4633431005")).status, "Closed");
+
 const final = await fetch(`${baseUrl}/api/lab`, { headers }).then((response) => response.json());
-assert.equal(final.records.length, 24);
+assert.equal(final.records.length, 30);
 assert.equal(final.events.length, 8);
 const lockedSourcingLead = final.records.find((record) => record.id === sourcingLead.id);
 assert.equal(lockedSourcingLead.payload.normalizedCompanyDomain, "verification.example.com");
@@ -1087,6 +1233,7 @@ assert.equal(final.events.filter((event) => event.recordId === forecast.id).leng
 const calibration = final.records.find((record) => record.recordType === "calibration_review");
 assert.equal(calibration.payload.brierScore, 0.1521);
 assert.equal(final.records.find((record) => record.id === recruitingOpportunity.id).payload.normalizedOfficialUrl, recruitingOpportunityPayload.officialUrl);
+assert.equal(final.records.find((record) => record.id === nextCycleOpportunity.id).payload.cycleKey, "summer-investor-2028");
 assert.equal(final.records.find((record) => record.id === recruitingObservation.id).parentId, recruitingOpportunity.id);
 assert.equal(final.records.find((record) => record.id === recruitingReferral.id).payload.interactionState, "Received");
 assert.equal(final.records.find((record) => record.id === secondRecruitingReferral.id).payload.evidenceSummary, "A second materially distinct same-day referral observation.");
@@ -1095,5 +1242,9 @@ assert.equal(final.records.find((record) => record.id === recruitingInterview.id
 assert.equal(final.records.find((record) => record.id === recruitingPractice.id).payload.practiceType, "Trend and company");
 assert.equal(final.records.find((record) => record.id === recruitingPortfolio.id).payload.publicationState, "Private candidate");
 assert.equal(final.records.filter((record) => record.parentId === recruitingOpportunity.id).length, 7);
+assert.equal(final.records.filter((record) => record.recordType === "opportunity_monitor_registration").length, 1);
+assert.equal(final.records.filter((record) => record.recordType === "opportunity_monitor_run").length, 2);
+assert.equal(final.records.filter((record) => record.recordType === "recruiting_opportunity" && record.payload.officialUrl.includes("4633431005")).length, 1);
+assert.equal(final.records.filter((record) => record.recordType === "opportunity_observation" && record.payload.sourceReference.includes("bvpanalyst")).length, 1);
 
-console.log("API smoke passed: 24 immutable records, 8 append-only events, prospective experiment and forecast boundaries, typed sourcing and recruiting evidence, external-action approval gates, Founder Evidence safeguards, calibration scoring, and owner isolation intact.");
+console.log("API smoke passed: 30 immutable records, 8 append-only events, cycle-safe idempotent owner-bound opportunity monitoring, prospective experiment and forecast boundaries, typed sourcing and recruiting evidence, external-action approval gates, Founder Evidence safeguards, calibration scoring, and owner isolation intact.");

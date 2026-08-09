@@ -57,10 +57,19 @@ export async function ensureLabSchema(): Promise<D1Database> {
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_sourcing_domain ON lab_records(owner_id, json_extract(payload_json, '$.normalizedCompanyDomain')) WHERE record_type = 'sourcing_lead'",
     ),
     db.prepare(
-      "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_recruiting_opportunity ON lab_records(owner_id, json_extract(payload_json, '$.normalizedOfficialUrl')) WHERE record_type = 'recruiting_opportunity'",
+      "DROP INDEX IF EXISTS idx_lab_records_unique_recruiting_opportunity",
+    ),
+    db.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_recruiting_opportunity_cycle ON lab_records(owner_id, json_extract(payload_json, '$.recordKey')) WHERE record_type = 'recruiting_opportunity'",
     ),
     db.prepare(
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_recruiting_child ON lab_records(owner_id, record_type, parent_id, json_extract(payload_json, '$.recordKey')) WHERE record_type IN ('opportunity_observation', 'recruiting_interaction', 'application_attempt', 'interview_practice', 'portfolio_candidate')",
+    ),
+    db.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_opportunity_monitor_run ON lab_records(owner_id, json_extract(payload_json, '$.runKey')) WHERE record_type = 'opportunity_monitor_run'",
+    ),
+    db.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_automation_registration ON lab_records(json_extract(payload_json, '$.tokenFingerprint')) WHERE record_type = 'opportunity_monitor_registration'",
     ),
     db.prepare("PRAGMA optimize"),
   ]);

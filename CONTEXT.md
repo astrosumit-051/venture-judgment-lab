@@ -33,7 +33,7 @@ A paid Summer 2027 early-stage technology investing internship with direct expos
 _Avoid_: Any finance internship, any VC-adjacent internship
 
 **Recruiting Opportunity**:
-The immutable first record of one researched role, program, relationship-led target, or fallback, preserving its first-party source, observed status, classification, qualification reason, immigration evidence, and next action before later outcomes are known.
+The immutable first record of one researched role, program cycle, relationship-led target, or fallback, preserving its stable cycle identity, first-party source, observed status, classification, qualification reason, immigration evidence, and next action before later outcomes are known. A genuinely new annual cycle on the same program URL is a new opportunity rather than an update to the prior cycle.
 _Avoid_: Mutable job row, prestige target, assumed opening
 
 **Opportunity Observation**:
@@ -63,6 +63,22 @@ _Avoid_: General CPT eligibility treated as role authorization, inferred work pe
 **Recruiting Funnel**:
 The count of distinct Qualified roles that progress through evidence-backed referral, submitted application, completed interview, and offer stages. Investing Milestones, activity volume, and firm prestige remain visible but outside the denominator.
 _Avoid_: Application score, outreach count, milestone inflation
+
+**Official Opportunity Monitor**:
+The private weekly process that checks a fixed set of first-party recruiting sources, preserves a complete dated run, and calls attention only to new opportunities, material changes, bounded source failures, or decisions the learner must make. It records evidence but never contacts a firm, submits an application, or publishes an artifact.
+_Avoid_: Autonomous recruiter, job-board scraper, silent status updater
+
+**Opportunity Monitor Target**:
+One registered first-party page with a stable identity, allowed source host, and explicit recruiting purpose. The target registry defines the full weekly coverage obligation; an omitted or substituted page makes a run incomplete.
+_Avoid_: Search query, unverified aggregator result, ad hoc link
+
+**Opportunity Monitor Run**:
+One immutable, idempotent account of the seven registered target checks scheduled for Monday at 8:00 AM Eastern, including reachable pages, bounded failures, resulting records, and notification reasons. Replaying identical evidence returns the existing run; conflicting evidence cannot replace it.
+_Avoid_: Mutable sync state, partial success treated as complete, duplicate weekly record
+
+**Material Opportunity Change**:
+A newly observed change to status, classification, funnel membership, deadline, compensation evidence, role qualification, immigration evidence, location, work mode, or next action. A recheck date alone is not material and does not create an Opportunity Observation.
+_Avoid_: Page timestamp change, cosmetic copy edit, duplicate observation
 
 **Venture Judgment Lab**:
 The living apprenticeship and evidence record that runs until the Destination Event.

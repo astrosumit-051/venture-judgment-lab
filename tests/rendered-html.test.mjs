@@ -19,6 +19,11 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
     readFile(new URL("../records/seven-month-internship-recruiting-sprint-2026-08-08.md", import.meta.url), "utf8"),
     access(new URL("../dist/server/index.js", import.meta.url)),
   ]);
+  const [monitor, automationRoute, monitorRecord] = await Promise.all([
+    readFile(new URL("../app/opportunityMonitor.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/automation/opportunities/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../records/official-opportunity-monitor-2026-08-08.md", import.meta.url), "utf8"),
+  ]);
 
   assert.match(layout, /Venture Judgment Lab/);
   assert.match(layout, /Evidence before narrative\./);
@@ -67,6 +72,8 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(recruitingView, /Qualified roles/);
   assert.match(recruitingView, /No prestige score\. No activity points\./);
   assert.match(recruitingView, /It cannot contact a firm, submit an application, or publish an artifact/);
+  assert.match(recruitingView, /Official Opportunity Monitor/);
+  assert.match(recruitingView, /Register private monitor/);
   assert.match(recruitingRecord, /August 2026–February 2027 sequence/);
   assert.match(recruitingRecord, /Unknown → General eligibility → DSO-confirmed role fit → Employer-compatible → Authorized/);
   assert.match(app, /Compare investment judgments with later evidence/);
@@ -102,10 +109,23 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(api, /resolvedForecasts/);
   assert.match(api, /cannot be resolved negatively until/);
   assert.match(api, /Commit Calibration Reviews through the scoring workflow/);
+  assert.match(api, /register_opportunity_monitor/);
+  assert.match(api, /Opportunity Monitor evidence is immutable/);
   assert.match(runtime, /CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_events_unique_forecast_resolution/);
   assert.match(runtime, /idx_lab_records_unique_sourcing_domain/);
-  assert.match(runtime, /idx_lab_records_unique_recruiting_opportunity/);
+  assert.match(runtime, /idx_lab_records_unique_recruiting_opportunity_cycle/);
   assert.match(runtime, /idx_lab_records_unique_recruiting_child/);
+  assert.match(runtime, /idx_lab_records_unique_opportunity_monitor_run/);
+  assert.match(runtime, /idx_lab_records_unique_automation_registration/);
+  assert.match(monitor, /America\/New_York/);
+  assert.match(monitor, /MONITOR_TARGETS/);
+  assert.match(monitor, /materialOpportunityChanges/);
+  assert.match(automationRoute, /verifyAutomationBearer/);
+  assert.match(automationRoute, /inputFingerprint/);
+  assert.match(automationRoute, /db\.batch/);
+  assert.doesNotMatch(automationRoute, /UPDATE lab_records|DELETE FROM lab_records/);
+  assert.match(monitorRecord, /all seven registered first-party targets exactly once/);
+  assert.match(monitorRecord, /cannot send outreach, submit an application, claim work authorization, or publish/);
   assert.match(calibration, /calculateBrierScore/);
   assert.match(calibration, /isCanonicalDate/);
   assert.match(calibration, /dateInTimeZone/);

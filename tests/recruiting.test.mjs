@@ -11,6 +11,7 @@ import {
 const opportunityPayload = {
   firm: "Verification Ventures",
   roleTitle: "Summer Investor",
+  cycleKey: "summer-investor-2027",
   opportunityClass: "Qualifying Internship",
   funnelClass: "Qualified role",
   officialUrl: "https://example.com/role",
@@ -152,7 +153,14 @@ test("verified target seeds preserve live classification and status boundaries",
   assert.equal(bessemer?.initialStatus, "Open");
   assert.equal(keyhorse?.opportunityClass, "Relationship-led target");
   assert.equal(keyhorse?.initialStatus, "No public opening");
-  assert.equal(recruitingRecordKey("recruiting_opportunity", opportunityPayload), "https://example.com/role");
+  assert.equal(recruitingRecordKey("recruiting_opportunity", opportunityPayload), "https://example.com/role|summer-investor-2027");
+  assert.notEqual(
+    recruitingRecordKey("recruiting_opportunity", opportunityPayload),
+    recruitingRecordKey("recruiting_opportunity", { ...opportunityPayload, cycleKey: "summer-investor-2028" }),
+  );
+  const legacyBessemer = { ...RECRUITING_TARGET_SEEDS[0] };
+  delete legacyBessemer.cycleKey;
+  assert.equal(recruitingRecordKey("recruiting_opportunity", legacyBessemer), `${RECRUITING_TARGET_SEEDS[0].normalizedOfficialUrl}|summer-analyst-2027`);
 });
 
 test("child identity rejects exact duplicates without colliding materially different same-day evidence", () => {
@@ -195,4 +203,33 @@ test("evidence-backed reclassification can qualify a role and later archival pre
   assert.equal(metrics.applications, 1);
   assert.equal(metrics.rows[0].currentStatus, "Closed");
   assert.equal(metrics.rows[0].funnelClass, "Archived");
+});
+
+test("latest Opportunity Observation is effective for every material recruiting field", () => {
+  const metrics = computeRecruitingMetrics([
+    record("role-1", "recruiting_opportunity", null, { ...opportunityPayload, publishedDeadline: "2026-09-01" }),
+    record("changed", "opportunity_observation", "role-1", {
+      observedOn: "2026-08-09",
+      status: "Waiting",
+      opportunityClass: "Qualifying Internship",
+      funnelClass: "Qualified role",
+      publishedDeadline: "",
+      deadlineTimezone: "Not stated",
+      compensationEvidence: "Compensation evidence was removed from the current page.",
+      location: "Boston, MA",
+      workMode: "Hybrid",
+      roleScope: "Current first-party scope.",
+      qualificationReason: "Current evidence-backed qualification.",
+      immigrationState: "Unknown",
+      immigrationEvidence: "Current page does not establish authorization evidence.",
+      nextAction: "Recheck the first-party page.",
+      dueDate: "2026-08-16",
+    }, "2026-08-09T12:00:00.000Z"),
+  ]);
+  const row = metrics.rows[0];
+  assert.equal(row.publishedDeadline, "");
+  assert.equal(row.location, "Boston, MA");
+  assert.equal(row.workMode, "Hybrid");
+  assert.equal(row.roleScope, "Current first-party scope.");
+  assert.equal(row.qualificationReason, "Current evidence-backed qualification.");
 });
