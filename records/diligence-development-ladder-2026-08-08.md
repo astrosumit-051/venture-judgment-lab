@@ -59,7 +59,9 @@ learner separates observation, reliability, inference, and disconfirmation.
 
 Each stage is dated in the case timezone on the day it is actually committed.
 The original Snapshot, Underwrite, case, and earlier stages remain unchanged.
-Generic History events cannot bypass the typed stage sequence.
+Later corrections, reflections, coaching notes, source status, and hindsight are
+appended as bounded, privacy-confirmed History events. They cannot alter stage
+identity, satisfy a missing stage, or unlock the next stage.
 
 ## Stage contracts
 

@@ -317,6 +317,25 @@ function keyEvidence(record: LabRecord): Array<[string, string]> {
   ];
   if (record.recordType === "diligence_stage") return [
     ["Stage", `${numberValue(p, "stageIndex") + 1} · ${textValue(p, "stageLabel")}`],
+    ...({
+      foundation: [["Foundation summary", textValue(p, "foundationSummary")], ["Snapshot crux", textValue(p, "snapshotCrux")], ["Underwrite decision", textValue(p, "underwriteDecision")]],
+      customer_market: [["Customer evidence", textValue(p, "customerEvidence")], ["Market evidence", textValue(p, "marketEvidence")], ["Customer unknowns", textValue(p, "customerUnknowns")]],
+      technical_product: [["Product assessment", textValue(p, "productAssessment")], ["Technical assessment", textValue(p, "technicalAssessment")], ["Defensibility", textValue(p, "defensibility")]],
+      business_economics: [["Business model", textValue(p, "businessModel")], ["Economic analysis", textValue(p, "economicAnalysis")], ["Scaling constraint", textValue(p, "scalingConstraint")]],
+      anti_memo: [["Non-investment case", textValue(p, "nonInvestmentCase")], ["Failure mechanism", textValue(p, "failureMechanism")], ["Leading failure indicators", textValue(p, "leadingFailureIndicators")], ["Reversal evidence", textValue(p, "reversalEvidence")]],
+      full_memo: [["Recommendation", textValue(p, "recommendation")], ["Investment memo", textValue(p, "investmentMemo")], ["Remaining dissent", textValue(p, "remainingDissent")]],
+      oral_defense: [["Changed judgment", textValue(p, "changedJudgment")], ["Unresolved issues", textValue(p, "unresolvedIssues")], ["Simulated IC decision", textValue(p, "simulatedIcDecision")]],
+    }[textValue(p, "stageKey")] ?? []) as Array<[string, string]>,
+    ...(Array.isArray(p.sources) ? p.sources.flatMap((item, index) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+      const source = item as Record<string, unknown>;
+      return [[`Source ${index + 1}`, `${textValue(source, "sourceType")} · ${textValue(source, "sourceReference")}\nObservation: ${textValue(source, "observation")}\nReliability limits: ${textValue(source, "reliabilityLimits")}`] as [string, string]];
+    }) : []),
+    ...(Array.isArray(p.timedQuestions) ? p.timedQuestions.flatMap((item, index) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+      const question = item as Record<string, unknown>;
+      return [[`Timed question ${index + 1}`, `${numberValue(question, "secondsAllowed")} seconds · ${textValue(question, "question")}\nAnswer: ${textValue(question, "answerSummary")}\nConcession: ${textValue(question, "concession")}`] as [string, string]];
+    }) : []),
     ["Limitations", textValue(p, "limitations")],
     ["Disconfirming evidence", textValue(p, "disconfirmingEvidence")],
     ["Inference", textValue(p, "inference")],
@@ -771,8 +790,10 @@ export function LabApp({ displayName }: { displayName: string }) {
       return;
     }
     const selectedRecord = data.records.find((record) => record.id === updateRecord);
-    if (selectedRecord?.recordType === "founder_evidence_review" && !updatePrivateEvidenceConfirmed) {
-      setNotice("Confirm that the Founder Evidence update contains only consented behavioral evidence.");
+    const needsPrivateEvidenceConfirmation = selectedRecord?.recordType === "founder_evidence_review"
+      || (selectedRecord && (DILIGENCE_RECORD_TYPES as readonly string[]).includes(selectedRecord.recordType));
+    if (needsPrivateEvidenceConfirmation && !updatePrivateEvidenceConfirmed) {
+      setNotice("Confirm that this update contains only bounded, approved evidence and preserves the original record.");
       return;
     }
     const saved = await post({
@@ -782,7 +803,7 @@ export function LabApp({ displayName }: { displayName: string }) {
       eventData: {
         text: updateText.trim(),
         originalPreserved: true,
-        ...(selectedRecord?.recordType === "founder_evidence_review" ? { privateEvidenceConfirmed: true } : {}),
+        ...(needsPrivateEvidenceConfirmation ? { privateEvidenceConfirmed: true } : {}),
       },
     });
     if (saved) {
@@ -1063,7 +1084,7 @@ export function LabApp({ displayName }: { displayName: string }) {
                   return <article className="timeline-record" key={record.id}><span className="timeline-dot" /><div className="record-head"><span>{recordLabel(record.recordType)}</span><time>{formatTime(record.committedAt)}</time></div><h3>{record.title}</h3><p>{recordSummary(record)}</p>{founderSource.startsWith("http") && <a className="history-source-link" href={founderSource} target="_blank" rel="noreferrer">Open Founder Evidence source ↗</a>}{childReadings.length > 0 && <div className="reading-archive">{childReadings.map((reading) => <a key={reading.id} href={textValue(reading.payload, "canonicalUrl")} target="_blank" rel="noreferrer"><span>{textValue(reading.payload, "lane")}</span><strong>{reading.title}</strong><small>{textValue(reading.payload, "learnerResponse")}</small></a>)}</div>}{keyEvidence(record).length > 0 && <details className="evidence-details"><summary>Inspect committed evidence</summary>{keyEvidence(record).map(([label, value]) => <div key={label}><strong>{label}</strong><p>{value}</p></div>)}</details>}{events.map((event) => { const resolutionSource = textValue(event.eventData, "resolutionSource"); const reviewId = textValue(event.eventData, "calibrationReviewId"); const linkedReview = reviewId ? data.records.find((item) => item.id === reviewId) : undefined; return <div className="event" key={event.id}><span>{eventLabel(event.eventType)}</span><time>{formatTime(event.occurredAt)}</time><p>{textValue(event.eventData, "text")}</p>{(resolutionSource || linkedReview) && <div className="event-links">{resolutionSource && <a href={resolutionSource} target="_blank" rel="noreferrer">Open resolution source ↗</a>}{linkedReview && <span>Recorded in {linkedReview.title}</span>}</div>}</div>; })}</article>;
                 })}
               </div>
-              <aside className="append-card"><span className="eyebrow coral">Append, never overwrite</span><h3>Add later evidence</h3><p>Use this for reflection, correction, source status, coaching, or later usefulness. Resolve Forecasts through Calibration; advance Sourcing, Recruiting, and Diligence through their typed workspaces.</p><form onSubmit={appendUpdate}><label>Original record<select required value={updateRecord} onChange={(e) => { setUpdateRecord(e.target.value); setUpdatePrivateEvidenceConfirmed(false); }}><option value="">Choose a record…</option>{data.records.filter((record) => record.recordType !== "sourcing_lead" && !(RECRUITING_RECORD_TYPES as readonly string[]).includes(record.recordType) && !(DILIGENCE_RECORD_TYPES as readonly string[]).includes(record.recordType)).map((record) => <option key={record.id} value={record.id}>{recordLabel(record.recordType)} · {record.title}</option>)}</select></label><label>Update type<select value={updateType} onChange={(e) => setUpdateType(e.target.value)}><option value="reflection">Reflection</option><option value="coach_feedback">Coach feedback</option><option value="later_usefulness">Later usefulness</option><option value="source_status">Source status</option><option value="metadata_correction">Metadata correction</option><option value="missed_practice">Missed practice</option></select></label><label>Dated update<textarea required rows={5} value={updateText} onChange={(e) => setUpdateText(e.target.value)} placeholder="State the new evidence, source, outcome, or correction. Do not restate history as if you knew it earlier." /></label>{selectedUpdateRecord?.recordType === "founder_evidence_review" && <label className="privacy-confirmation"><input required type="checkbox" checked={updatePrivateEvidenceConfirmed} onChange={(e) => setUpdatePrivateEvidenceConfirmed(e.target.checked)} />I confirm this update contains only consented behavioral evidence and omits raw transcripts, ratings, and confidential details.</label>}<button className="primary" disabled={busy}>{busy ? "Appending…" : "Append update"}</button></form></aside>
+              <aside className="append-card"><span className="eyebrow coral">Append, never overwrite</span><h3>Add later evidence</h3><p>Use this for reflection, correction, source status, coaching, or later usefulness. Resolve Forecasts through Calibration; complete required Sourcing, Recruiting, and Diligence stages in their typed workspaces, then append later notes here.</p><form onSubmit={appendUpdate}><label>Original record<select required value={updateRecord} onChange={(e) => { setUpdateRecord(e.target.value); setUpdatePrivateEvidenceConfirmed(false); }}><option value="">Choose a record…</option>{data.records.filter((record) => record.recordType !== "sourcing_lead" && !(RECRUITING_RECORD_TYPES as readonly string[]).includes(record.recordType)).map((record) => <option key={record.id} value={record.id}>{recordLabel(record.recordType)} · {record.title}</option>)}</select></label><label>Update type<select value={updateType} onChange={(e) => setUpdateType(e.target.value)}><option value="reflection">Reflection</option><option value="coach_feedback">Coach feedback</option><option value="later_usefulness">Later usefulness</option><option value="source_status">Source status</option><option value="metadata_correction">Metadata correction</option><option value="missed_practice">Missed practice</option></select></label><label>Dated update<textarea required rows={5} value={updateText} onChange={(e) => setUpdateText(e.target.value)} placeholder="State the new evidence, source, outcome, or correction. Do not restate history as if you knew it earlier." /></label>{(selectedUpdateRecord?.recordType === "founder_evidence_review" || (selectedUpdateRecord && (DILIGENCE_RECORD_TYPES as readonly string[]).includes(selectedUpdateRecord.recordType))) && <label className="privacy-confirmation"><input required type="checkbox" checked={updatePrivateEvidenceConfirmed} onChange={(e) => setUpdatePrivateEvidenceConfirmed(e.target.checked)} />I confirm this update preserves the original and contains only bounded, approved evidence without raw transcripts, contact details, ratings, secrets, or unapproved confidential material.</label>}<button className="primary" disabled={busy}>{busy ? "Appending…" : "Append update"}</button></form></aside>
             </div>
           </section>
         )}

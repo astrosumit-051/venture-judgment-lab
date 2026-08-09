@@ -22,15 +22,19 @@ const todayInChicago = chicagoDate();
 const tomorrowInChicago = chicagoDate(1);
 const experimentEndInChicago = chicagoDate(7);
 
-async function post(body, expected = 201) {
+async function postAs(requestHeaders, body, expected = 201) {
   const response = await fetch(`${baseUrl}/api/lab`, {
     method: "POST",
-    headers,
+    headers: requestHeaders,
     body: JSON.stringify(body),
   });
   const result = await response.json();
   assert.equal(response.status, expected, JSON.stringify(result));
   return result;
+}
+
+async function post(body, expected = 201) {
+  return postAs(headers, body, expected);
 }
 
 const automationToken = process.env.LAB_AUTOMATION_TOKEN ?? "local-opportunity-monitor-verification-token";
@@ -789,8 +793,18 @@ await post({
   operation: "append_event",
   recordId: diligenceCase.id,
   eventType: "reflection",
-  eventData: { text: "Generic updates must not bypass the typed Diligence sequence.", originalPreserved: true },
+  eventData: { text: "Diligence updates require explicit privacy confirmation.", originalPreserved: true },
 }, 400);
+await post({
+  operation: "append_event",
+  recordId: diligenceCase.id,
+  eventType: "reflection",
+  eventData: {
+    text: "This bounded reflection preserves the case and does not satisfy a Diligence stage.",
+    originalPreserved: true,
+    privateEvidenceConfirmed: true,
+  },
+});
 
 const diligenceBase = (stageKey, specific) => ({
   caseId: diligenceCase.id,
@@ -832,6 +846,29 @@ const foundationPayload = diligenceBase("foundation", {
   snapshotCrux: "Can workflow evidence support durable customer pull?",
   underwriteDecision: "Watch while the customer and durability evidence remains narrow.",
 });
+const otherOwnerHeaders = {
+  ...headers,
+  "oai-authenticated-user-id": `verification-other-${suffix}`,
+  "oai-authenticated-user-email": `verification-other-${suffix}@example.com`,
+};
+assert.deepEqual(await fetch(`${baseUrl}/api/lab`, { headers: otherOwnerHeaders }).then((response) => response.json()), { records: [], events: [] });
+await postAs(otherOwnerHeaders, {
+  operation: "commit_record",
+  recordType: "diligence_stage",
+  parentId: diligenceCase.id,
+  title: "Foreign-owner Diligence foundation",
+  payload: foundationPayload,
+}, 404);
+await postAs(otherOwnerHeaders, {
+  operation: "append_event",
+  recordId: diligenceCase.id,
+  eventType: "reflection",
+  eventData: {
+    text: "A second owner cannot append to the first owner's case.",
+    originalPreserved: true,
+    privateEvidenceConfirmed: true,
+  },
+}, 404);
 await post({
   operation: "commit_record",
   recordType: "diligence_stage",
@@ -913,7 +950,17 @@ const oralBase = diligenceBase("oral_defense", {
 await post({ operation: "commit_record", recordType: "diligence_stage", parentId: diligenceCase.id, title: "Short oral defense", payload: { ...oralBase, timedQuestions: oralBase.timedQuestions.slice(0, 2) } }, 400);
 const oralStage = await post({ operation: "commit_record", recordType: "diligence_stage", parentId: diligenceCase.id, title: "Verification Systems — Oral defense", payload: oralBase });
 await post({ operation: "commit_record", recordType: "diligence_stage", parentId: diligenceCase.id, title: "Stage after completion", payload: oralBase }, 409);
-await post({ operation: "append_event", recordId: oralStage.id, eventType: "reflection", eventData: { text: "Generic mutation is not a stage.", originalPreserved: true } }, 400);
+await post({ operation: "append_event", recordId: oralStage.id, eventType: "reflection", eventData: { text: "Undeclared fields are rejected.", originalPreserved: true, privateEvidenceConfirmed: true, stageKey: "oral_defense" } }, 400);
+await post({
+  operation: "append_event",
+  recordId: oralStage.id,
+  eventType: "later_usefulness",
+  eventData: {
+    text: "Later practice showed the oral defense exposed the correct unresolved evidence without changing the committed stage.",
+    originalPreserved: true,
+    privateEvidenceConfirmed: true,
+  },
+});
 
 await post({
   operation: "append_event",
@@ -1389,7 +1436,7 @@ assert.equal(currentMonitorState.opportunities.find((opportunity) => opportunity
 
 const final = await fetch(`${baseUrl}/api/lab`, { headers }).then((response) => response.json());
 assert.equal(final.records.length, 38);
-assert.equal(final.events.length, 8);
+assert.equal(final.events.length, 10);
 const lockedSourcingLead = final.records.find((record) => record.id === sourcingLead.id);
 assert.equal(lockedSourcingLead.payload.normalizedCompanyDomain, "verification.example.com");
 assert.equal(lockedSourcingLead.payload.company, "Verification Co");
@@ -1426,5 +1473,7 @@ assert.equal(diligenceStages.length, 7);
 assert.deepEqual(diligenceStages.map((record) => record.id), [foundationStage.id, customerStage.id, technicalStage.id, economicsStage.id, antiMemoStage.id, memoStage.id, oralStage.id]);
 assert.deepEqual(diligenceStages.map((record) => record.payload.stageKey), ["foundation", "customer_market", "technical_product", "business_economics", "anti_memo", "full_memo", "oral_defense"]);
 assert.equal(diligenceStages.every((record) => record.payload.privacyConfirmed === true), true);
+assert.equal(final.events.filter((event) => event.recordId === diligenceCase.id).length, 1);
+assert.equal(final.events.filter((event) => event.recordId === oralStage.id).length, 1);
 
-console.log("API smoke passed: 38 immutable records, 8 append-only events, an exact seven-stage Diligence Case, cycle-safe idempotent owner-bound opportunity monitoring, prospective experiment and forecast boundaries, typed sourcing and recruiting evidence, external-action approval gates, Founder Evidence safeguards, calibration scoring, and owner isolation intact.");
+console.log("API smoke passed: 38 immutable records, 10 append-only events, an exact seven-stage Diligence Case with bounded later history, cycle-safe idempotent owner-bound opportunity monitoring, prospective experiment and forecast boundaries, typed sourcing and recruiting evidence, external-action approval gates, Founder Evidence safeguards, calibration scoring, and owner isolation intact.");

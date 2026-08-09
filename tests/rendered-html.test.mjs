@@ -44,7 +44,7 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(app, /SourcingView/);
   assert.match(app, /Observable behavior, not founder vibes/);
   assert.match(app, /only consented behavioral evidence/);
-  assert.match(app, /Confirm that the Founder Evidence update contains only consented behavioral evidence/);
+  assert.match(app, /Confirm that this update contains only bounded, approved evidence and preserves the original record/);
   assert.match(app, /sourceDate: dateInTimeZone/);
   assert.match(founder, /Insight/);
   assert.match(founder, /Integrity/);
@@ -146,7 +146,8 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(runtime, /idx_lab_records_unique_diligence_case/);
   assert.match(runtime, /idx_lab_records_unique_diligence_stage/);
   assert.match(api, /Commit .* before any later Diligence stage/);
-  assert.match(api, /Advance Diligence evidence only through the typed stage sequence/);
+  assert.match(api, /Diligence updates require a bounded note/);
+  assert.match(app, /contains only bounded, approved evidence/);
   assert.match(calibration, /calculateBrierScore/);
   assert.match(calibration, /isCanonicalDate/);
   assert.match(calibration, /dateInTimeZone/);

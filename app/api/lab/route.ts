@@ -1335,9 +1335,6 @@ export async function POST(request: Request) {
     if ((RECRUITING_RECORD_TYPES as readonly string[]).includes(parent.record_type)) {
       return Response.json({ error: "Append Recruiting evidence through the typed Recruiting workspace so dates, approvals, and funnel integrity are preserved." }, { status: 400 });
     }
-    if ((DILIGENCE_RECORD_TYPES as readonly string[]).includes(parent.record_type)) {
-      return Response.json({ error: "Advance Diligence evidence only through the typed stage sequence so prerequisites and Decision Deltas remain auditable." }, { status: 400 });
-    }
     if (parent.record_type === "opportunity_monitor_run" || parent.record_type === "opportunity_monitor_registration") {
       return Response.json({ error: "Opportunity Monitor evidence is immutable and can be created only through its bounded registration and run workflows." }, { status: 400 });
     }
@@ -1352,6 +1349,19 @@ export async function POST(request: Request) {
         || eventData.privateEvidenceConfirmed !== true
       ) {
         return Response.json({ error: "Founder Evidence updates require a concise behavioral note, preservation marker, and privacy confirmation; transcripts, ratings, and undeclared fields are rejected." }, { status: 400 });
+      }
+    }
+    if ((DILIGENCE_RECORD_TYPES as readonly string[]).includes(parent.record_type)) {
+      const allowedDiligenceEventKeys = new Set(["text", "originalPreserved", "privateEvidenceConfirmed"]);
+      if (
+        Object.keys(eventData).some((key) => !allowedDiligenceEventKeys.has(key))
+        || typeof eventData.text !== "string"
+        || !eventData.text.trim()
+        || eventData.text.length > 5000
+        || eventData.originalPreserved !== true
+        || eventData.privateEvidenceConfirmed !== true
+      ) {
+        return Response.json({ error: "Diligence updates require a bounded note, preservation marker, and privacy confirmation; they never alter or unlock a stage." }, { status: 400 });
       }
     }
 
