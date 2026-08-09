@@ -147,10 +147,15 @@ test("authorization and external-action claims require the exact evidence state 
 
 test("verified target seeds preserve live classification and status boundaries", () => {
   const bessemer = RECRUITING_TARGET_SEEDS.find((target) => target.firm === "Bessemer Venture Partners");
+  const dormRoomFund = RECRUITING_TARGET_SEEDS.find((target) => target.firm === "Dorm Room Fund");
   const keyhorse = RECRUITING_TARGET_SEEDS.find((target) => target.firm === "Keyhorse Capital");
 
   assert.equal(bessemer?.opportunityClass, "Qualifying Internship");
   assert.equal(bessemer?.initialStatus, "Open");
+  assert.equal(dormRoomFund?.cycleKey, "investment-partner-next-cycle-unverified");
+  assert.equal(dormRoomFund?.initialStatus, "Waiting");
+  assert.equal(dormRoomFund?.publishedDeadline, "");
+  assert.match(dormRoomFund?.nextAction ?? "", /new first-party cycle confirmation/i);
   assert.equal(keyhorse?.opportunityClass, "Relationship-led target");
   assert.equal(keyhorse?.initialStatus, "No public opening");
   assert.equal(recruitingRecordKey("recruiting_opportunity", opportunityPayload), "https://example.com/role|summer-investor-2027");
