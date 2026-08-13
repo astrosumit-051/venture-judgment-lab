@@ -28,6 +28,10 @@ _Avoid_: CPT approved, work authorized for the internship
 A student investing apprenticeship, fellowship, scout role, or live decision-making program that materially develops evidence and access but does not satisfy the paid Qualifying Internship definition.
 _Avoid_: Qualifying Internship, résumé badge
 
+**Investing Milestone Substitution**:
+An accepted, high-commitment Investing Milestone becomes the learner's primary investing practice within sustainable capacity, displacing standalone Lab quotas while retaining only bounded evidence-safe reflection and no catch-up debt.
+_Avoid_: Extra program hours, parallel Lab load
+
 **Qualifying Internship**:
 A paid Summer 2027 early-stage technology investing internship with direct exposure to sourcing, founder evaluation, diligence, and the investment team. Accelerator and emerging-manager investing roles can qualify; startup, consulting, and finance internships are fallback outcomes.
 _Avoid_: Any finance internship, any VC-adjacent internship

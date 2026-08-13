@@ -32,6 +32,7 @@ A private, dynamic, evidence-preserving apprenticeship is operating through Site
 - [Prepare the Keyhorse Capital recruiting inquiry](issues/21-prepare-keyhorse-outreach.md) — Preserve the verified relationship and no-opening evidence in a private, approval-gated Summer 2027 inquiry covering timing, expected evidence, role scope, compensation, and employer documentation for Centre's CPT review; the Gmail draft remains unsent until the learner explicitly approves it.
 - [Design the diligence development ladder](issues/10-design-diligence-development-ladder.md) — Advance one locked Snapshot and Weekly Underwrite through an exact seven-stage Diligence Case whose immutable evidence, Anti-Memo, full memo, and timed oral defense cannot skip sequence, collapse into a score, or rewrite prior judgment.
 - [Define coaching behavior and evidence of mastery](issues/12-define-coaching-and-mastery-evidence.md) — Diagnose only committed Independent First Pass work through a bounded owner-isolated Codex queue, preserve feedback and genuine revisions append-only, and recognize repeated or corroborated evidence only after three attempts across two companies with a revision or disconfirmation and clean latest attempts.
+- [Decide whether Dorm Room Fund should replace Lab practice](issues/18-decide-dorm-room-fund.md) — Pursue the verified 2026–2027 cycle, park application preparation until the learner is available, and use Investing Milestone Substitution if accepted so DRF replaces rather than expands weekly Lab practice.
 
 ## Not yet specified
 

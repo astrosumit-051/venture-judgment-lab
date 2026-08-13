@@ -153,7 +153,14 @@ test("verified target seeds preserve live classification and status boundaries",
 
   assert.equal(bessemer?.opportunityClass, "Qualifying Internship");
   assert.equal(bessemer?.initialStatus, "Open");
-  assert.equal(dormRoomFund, undefined);
+  assert.equal(dormRoomFund?.cycleKey, "investment-partner-2026-2027");
+  assert.equal(dormRoomFund?.opportunityClass, "Investing Milestone");
+  assert.equal(dormRoomFund?.initialStatus, "Open");
+  assert.equal(dormRoomFund?.publishedDeadline, "2026-09-17");
+  assert.equal(dormRoomFund?.deadlineTimezone, "America/New_York");
+  assert.equal(dormRoomFund?.immigrationState, "Unknown");
+  assert.equal(dormRoomFund?.authorizationClaim, false);
+  assert.match(dormRoomFund?.nextAction ?? "", /explicit approval/i);
   assert.equal(keyhorse?.opportunityClass, "Relationship-led target");
   assert.equal(keyhorse?.initialStatus, "No public opening");
   assert.equal(recruitingRecordKey("recruiting_opportunity", opportunityPayload), "https://example.com/role|summer-investor-2027");
