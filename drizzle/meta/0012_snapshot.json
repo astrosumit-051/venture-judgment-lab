@@ -1,0 +1,812 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "d1f4d731-87cd-415f-85a8-444826befec3",
+  "prevId": "c723932e-827c-4a89-b201-32d1356360c1",
+  "tables": {
+    "lab_assignments": {
+      "name": "lab_assignments",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "learner_date": {
+          "name": "learner_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "profile_id": {
+          "name": "profile_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "automation_run_id": {
+          "name": "automation_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "evidence_record_id": {
+          "name": "evidence_record_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payload_checksum": {
+          "name": "payload_checksum",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_lab_assignments_owner_date": {
+          "name": "idx_lab_assignments_owner_date",
+          "columns": [
+            "owner_id",
+            "learner_date"
+          ],
+          "isUnique": true
+        },
+        "idx_lab_assignments_owner_run": {
+          "name": "idx_lab_assignments_owner_run",
+          "columns": [
+            "owner_id",
+            "automation_run_id"
+          ],
+          "isUnique": true
+        },
+        "idx_lab_assignments_owner_created": {
+          "name": "idx_lab_assignments_owner_created",
+          "columns": [
+            "owner_id",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "lab_assignments_profile_id_lab_profiles_id_fk": {
+          "name": "lab_assignments_profile_id_lab_profiles_id_fk",
+          "tableFrom": "lab_assignments",
+          "tableTo": "lab_profiles",
+          "columnsFrom": [
+            "profile_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "lab_assignments_automation_run_id_lab_automation_runs_id_fk": {
+          "name": "lab_assignments_automation_run_id_lab_automation_runs_id_fk",
+          "tableFrom": "lab_assignments",
+          "tableTo": "lab_automation_runs",
+          "columnsFrom": [
+            "automation_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "lab_assignments_evidence_record_id_lab_records_id_fk": {
+          "name": "lab_assignments_evidence_record_id_lab_records_id_fk",
+          "tableFrom": "lab_assignments",
+          "tableTo": "lab_records",
+          "columnsFrom": [
+            "evidence_record_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "lab_automation_credentials": {
+      "name": "lab_automation_credentials",
+      "columns": {
+        "token_fingerprint": {
+          "name": "token_fingerprint",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_lab_automation_credentials_owner": {
+          "name": "idx_lab_automation_credentials_owner",
+          "columns": [
+            "owner_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "lab_automation_runs": {
+      "name": "lab_automation_runs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "operator_kind": {
+          "name": "operator_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "scheduled_for": {
+          "name": "scheduled_for",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "profile_id": {
+          "name": "profile_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "input_checksum": {
+          "name": "input_checksum",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "evidence_record_id": {
+          "name": "evidence_record_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "notification_intent": {
+          "name": "notification_intent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_lab_automation_runs_owner_slot": {
+          "name": "idx_lab_automation_runs_owner_slot",
+          "columns": [
+            "owner_id",
+            "operator_kind",
+            "scheduled_for"
+          ],
+          "isUnique": true
+        },
+        "idx_lab_automation_runs_owner_created": {
+          "name": "idx_lab_automation_runs_owner_created",
+          "columns": [
+            "owner_id",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "lab_automation_runs_profile_id_lab_profiles_id_fk": {
+          "name": "lab_automation_runs_profile_id_lab_profiles_id_fk",
+          "tableFrom": "lab_automation_runs",
+          "tableTo": "lab_profiles",
+          "columnsFrom": [
+            "profile_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "lab_automation_runs_evidence_record_id_lab_records_id_fk": {
+          "name": "lab_automation_runs_evidence_record_id_lab_records_id_fk",
+          "tableFrom": "lab_automation_runs",
+          "tableTo": "lab_records",
+          "columnsFrom": [
+            "evidence_record_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "lab_events": {
+      "name": "lab_events",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "record_id": {
+          "name": "record_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "event_json": {
+          "name": "event_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_lab_events_record_occurred": {
+          "name": "idx_lab_events_record_occurred",
+          "columns": [
+            "record_id",
+            "occurred_at"
+          ],
+          "isUnique": false
+        },
+        "idx_lab_events_owner_occurred": {
+          "name": "idx_lab_events_owner_occurred",
+          "columns": [
+            "owner_id",
+            "occurred_at"
+          ],
+          "isUnique": false
+        },
+        "idx_lab_events_unique_forecast_resolution": {
+          "name": "idx_lab_events_unique_forecast_resolution",
+          "columns": [
+            "record_id"
+          ],
+          "isUnique": true,
+          "where": "\"lab_events\".\"event_type\" = 'forecast_resolution'"
+        },
+        "idx_lab_events_unique_archive_preserved": {
+          "name": "idx_lab_events_unique_archive_preserved",
+          "columns": [
+            "record_id"
+          ],
+          "isUnique": true,
+          "where": "\"lab_events\".\"event_type\" = 'archive_preserved'"
+        },
+        "idx_lab_events_unique_assignment_committed": {
+          "name": "idx_lab_events_unique_assignment_committed",
+          "columns": [
+            "record_id"
+          ],
+          "isUnique": true,
+          "where": "\"lab_events\".\"event_type\" = 'assignment_committed'"
+        },
+        "idx_lab_events_unique_assignment_terminal": {
+          "name": "idx_lab_events_unique_assignment_terminal",
+          "columns": [
+            "record_id"
+          ],
+          "isUnique": true,
+          "where": "\"lab_events\".\"event_type\" IN ('completion', 'missed_practice')"
+        },
+        "idx_lab_events_unique_learner_response": {
+          "name": "idx_lab_events_unique_learner_response",
+          "columns": [
+            "record_id"
+          ],
+          "isUnique": true,
+          "where": "\"lab_events\".\"event_type\" = 'learner_response'"
+        }
+      },
+      "foreignKeys": {
+        "lab_events_record_id_lab_records_id_fk": {
+          "name": "lab_events_record_id_lab_records_id_fk",
+          "tableFrom": "lab_events",
+          "tableTo": "lab_records",
+          "columnsFrom": [
+            "record_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "lab_profiles": {
+      "name": "lab_profiles",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "profile_version": {
+          "name": "profile_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "practice_mode": {
+          "name": "practice_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expected_weekdays_json": {
+          "name": "expected_weekdays_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "notification_preference": {
+          "name": "notification_preference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "effective_learner_date": {
+          "name": "effective_learner_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "automation_binding": {
+          "name": "automation_binding",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_lab_profiles_owner_version": {
+          "name": "idx_lab_profiles_owner_version",
+          "columns": [
+            "owner_id",
+            "profile_version"
+          ],
+          "isUnique": true
+        },
+        "idx_lab_profiles_owner_effective_date": {
+          "name": "idx_lab_profiles_owner_effective_date",
+          "columns": [
+            "owner_id",
+            "effective_learner_date"
+          ],
+          "isUnique": true
+        },
+        "idx_lab_profiles_owner_created": {
+          "name": "idx_lab_profiles_owner_created",
+          "columns": [
+            "owner_id",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "lab_records": {
+      "name": "lab_records",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "record_type": {
+          "name": "record_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payload_json": {
+          "name": "payload_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "committed_at": {
+          "name": "committed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_lab_records_owner_committed": {
+          "name": "idx_lab_records_owner_committed",
+          "columns": [
+            "owner_id",
+            "committed_at"
+          ],
+          "isUnique": false
+        },
+        "idx_lab_records_owner_type": {
+          "name": "idx_lab_records_owner_type",
+          "columns": [
+            "owner_id",
+            "record_type"
+          ],
+          "isUnique": false
+        },
+        "idx_lab_records_unique_sourcing_domain": {
+          "name": "idx_lab_records_unique_sourcing_domain",
+          "columns": [
+            "owner_id",
+            "json_extract(\"payload_json\", '$.normalizedCompanyDomain')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'sourcing_lead'"
+        },
+        "idx_lab_records_unique_recruiting_opportunity_cycle": {
+          "name": "idx_lab_records_unique_recruiting_opportunity_cycle",
+          "columns": [
+            "owner_id",
+            "json_extract(\"payload_json\", '$.recordKey')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'recruiting_opportunity'"
+        },
+        "idx_lab_records_unique_recruiting_child": {
+          "name": "idx_lab_records_unique_recruiting_child",
+          "columns": [
+            "owner_id",
+            "record_type",
+            "parent_id",
+            "json_extract(\"payload_json\", '$.recordKey')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" IN ('opportunity_observation', 'recruiting_interaction', 'application_attempt', 'interview_practice', 'portfolio_candidate')"
+        },
+        "idx_lab_records_unique_opportunity_monitor_run": {
+          "name": "idx_lab_records_unique_opportunity_monitor_run",
+          "columns": [
+            "owner_id",
+            "json_extract(\"payload_json\", '$.runKey')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'opportunity_monitor_run'"
+        },
+        "idx_lab_records_unique_automation_registration": {
+          "name": "idx_lab_records_unique_automation_registration",
+          "columns": [
+            "json_extract(\"payload_json\", '$.tokenFingerprint')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'opportunity_monitor_registration'"
+        },
+        "idx_lab_records_unique_lab_automation_registration": {
+          "name": "idx_lab_records_unique_lab_automation_registration",
+          "columns": [
+            "json_extract(\"payload_json\", '$.tokenFingerprint')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'lab_automation_registration'"
+        },
+        "idx_lab_records_unique_diligence_case": {
+          "name": "idx_lab_records_unique_diligence_case",
+          "columns": [
+            "owner_id",
+            "json_extract(\"payload_json\", '$.caseKey')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'diligence_case'"
+        },
+        "idx_lab_records_unique_diligence_stage": {
+          "name": "idx_lab_records_unique_diligence_stage",
+          "columns": [
+            "owner_id",
+            "parent_id",
+            "json_extract(\"payload_json\", '$.stageKey')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'diligence_stage'"
+        },
+        "idx_lab_records_unique_coach_request": {
+          "name": "idx_lab_records_unique_coach_request",
+          "columns": [
+            "owner_id",
+            "parent_id",
+            "json_extract(\"payload_json\", '$.dimension')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'coach_request'"
+        },
+        "idx_lab_records_unique_coach_feedback": {
+          "name": "idx_lab_records_unique_coach_feedback",
+          "columns": [
+            "owner_id",
+            "parent_id"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'coach_feedback'"
+        },
+        "idx_lab_records_unique_revision_attempt": {
+          "name": "idx_lab_records_unique_revision_attempt",
+          "columns": [
+            "owner_id",
+            "parent_id"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'revision_attempt'"
+        },
+        "idx_lab_records_unique_mastery_evidence": {
+          "name": "idx_lab_records_unique_mastery_evidence",
+          "columns": [
+            "owner_id",
+            "json_extract(\"payload_json\", '$.recordKey')"
+          ],
+          "isUnique": true,
+          "where": "\"lab_records\".\"record_type\" = 'mastery_evidence'"
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {
+      "idx_lab_records_unique_sourcing_domain": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.normalizedCompanyDomain')": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_lab_records_unique_recruiting_opportunity_cycle": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.recordKey')": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_lab_records_unique_recruiting_child": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.recordKey')": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_lab_records_unique_opportunity_monitor_run": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.runKey')": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_lab_records_unique_automation_registration": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.tokenFingerprint')": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_lab_records_unique_lab_automation_registration": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.tokenFingerprint')": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_lab_records_unique_diligence_case": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.caseKey')": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_lab_records_unique_diligence_stage": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.stageKey')": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_lab_records_unique_coach_request": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.dimension')": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_lab_records_unique_mastery_evidence": {
+        "columns": {
+          "json_extract(\"payload_json\", '$.recordKey')": {
+            "isExpression": true
+          }
+        }
+      }
+    }
+  }
+}

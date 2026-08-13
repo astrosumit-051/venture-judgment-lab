@@ -1,4 +1,4 @@
-import { verifyAutomationBearer } from "@/app/automationAuth";
+import { registeredAutomationOwner } from "@/app/automationRegistration";
 import { dateInTimeZone } from "@/app/calibration";
 import {
   boundedCoachSource,
@@ -36,20 +36,9 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-async function registeredOwner(db: D1Database, request: Request): Promise<string | null> {
-  const identity = await verifyAutomationBearer(request);
-  if (!identity) return null;
-  const registration = await db.prepare(
-    `SELECT owner_id FROM lab_records WHERE record_type = 'opportunity_monitor_registration'
-     AND json_extract(payload_json, '$.tokenFingerprint') = ?
-     AND json_extract(payload_json, '$.status') = 'active' LIMIT 1`,
-  ).bind(identity.fingerprint).first<{ owner_id: string }>();
-  return registration?.owner_id ?? null;
-}
-
 export async function GET(request: Request) {
   const db = await ensureLabSchema();
-  const owner = await registeredOwner(db, request);
+  const owner = await registeredAutomationOwner(db, request, "coach");
   if (!owner) return Response.json({ error: "Valid registered automation authorization is required." }, { status: 401 });
   const queue = await db.prepare(
     `SELECT request.id, request.parent_id, request.title, request.payload_json, request.committed_at,
@@ -130,7 +119,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const db = await ensureLabSchema();
-  const owner = await registeredOwner(db, request);
+  const owner = await registeredAutomationOwner(db, request, "coach");
   if (!owner) return Response.json({ error: "Valid registered automation authorization is required." }, { status: 401 });
   let body: unknown;
   try {

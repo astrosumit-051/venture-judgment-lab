@@ -2,7 +2,12 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { calculateBrierScore, dateInTimeZone, type ForecastOutcome } from "./calibration";
-import { dailyBrief } from "./dailyBrief";
+import {
+  DailyAssignmentView,
+  type TodayAssignment,
+  type TodayAssignmentResponse,
+} from "./DailyAssignmentView";
+import { AssignmentEventView } from "./AssignmentEventView";
 import {
   emptyFounderDimensions,
   FOUNDER_DIMENSIONS,
@@ -42,6 +47,17 @@ type LabEvent = {
 
 type LabData = { records: LabRecord[]; events: LabEvent[] };
 
+type AssignmentHistoryItem = {
+  id: string;
+  learnerDate: string;
+  state: string;
+  createdAt: string;
+  evidence: { id: string; title: string };
+  profile: { version: string; timezone: string; practiceMode: string };
+  run: { id: string; scheduledFor: string; notificationIntent: string; evidenceRecordId: string };
+  archive: { status: "preserved" | "pending"; preservedAt: string | null };
+};
+
 type EvidenceRow = {
   observation: string;
   sourceUrl: string;
@@ -56,6 +72,8 @@ type ResolutionDraft = {
   resolutionEvidence: string;
   resolutionSource: string;
 };
+
+const DEFAULT_LAB_TIMEZONE = "America/Chicago";
 
 const navItems: Array<{ id: View; key: string; label: string; hint: string }> = [
   { id: "today", key: "T", label: "Today", hint: "The next judgment" },
@@ -189,7 +207,7 @@ const emptyFounderReview = () => ({
   founderName: "",
   sourceType: "Public interview" as FounderSourceType,
   sourceUrlOrContext: "",
-  sourceDate: dateInTimeZone(new Date(), dailyBrief.timezone),
+  sourceDate: dateInTimeZone(new Date(), DEFAULT_LAB_TIMEZONE),
   sourceLimitations: "",
   privacyBoundary: "",
   privateEvidenceConfirmed: false,
@@ -220,13 +238,13 @@ function formatTime(value: string): string {
   }).format(new Date(value));
 }
 
-function formatBriefDate(value: string): string {
+function formatBriefDate(value: string, timezone: string): string {
   return new Intl.DateTimeFormat("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
     year: "numeric",
-    timeZone: dailyBrief.timezone,
+    timeZone: timezone,
   }).format(new Date(`${value}T12:00:00-05:00`));
 }
 
@@ -258,10 +276,6 @@ function recordLabel(type: string): string {
     weekly_plan: "Practice Plan",
     calibration_review: "Calibration Review",
   }[type] ?? type.replaceAll("_", " ");
-}
-
-function eventLabel(type: string): string {
-  return type.replaceAll("_", " ");
 }
 
 function textValue(payload: Record<string, unknown>, key: string): string {
@@ -482,13 +496,13 @@ export function LabApp({ displayName }: { displayName: string }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
 
-  const [briefChecks, setBriefChecks] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(dailyBrief.readings.map((reading) => [reading.readingId, false])),
-  );
-  const [briefResponses, setBriefResponses] = useState<Record<string, string>>(() =>
-    Object.fromEntries(dailyBrief.readings.map((reading) => [reading.readingId, ""])),
-  );
-  const [briefCarry, setBriefCarry] = useState("");
+  const [assignment, setAssignment] = useState<TodayAssignment | null>(null);
+  const [assignmentDate, setAssignmentDate] = useState(dateInTimeZone(new Date(), DEFAULT_LAB_TIMEZONE));
+  const [assignmentTimezone, setAssignmentTimezone] = useState(DEFAULT_LAB_TIMEZONE);
+  const [assignmentLoading, setAssignmentLoading] = useState(true);
+  const [assignmentError, setAssignmentError] = useState("");
+  const [assignmentHistory, setAssignmentHistory] = useState<AssignmentHistoryItem[]>([]);
+  const [assignmentHistoryError, setAssignmentHistoryError] = useState("");
   const [snapshot, setSnapshot] = useState(emptySnapshot);
   const [forecast, setForecast] = useState(emptyForecast);
   const [secondOrder, setSecondOrder] = useState(emptyMap);
@@ -568,14 +582,7 @@ export function LabApp({ displayName }: { displayName: string }) {
     () => historyFilter === "all" ? topLevelRecords : topLevelRecords.filter((record) => record.recordType === historyFilter),
     [historyFilter, topLevelRecords],
   );
-  const savedBrief = data.records.find(
-    (record) => record.recordType === "daily_brief"
-      && textValue(record.payload, "assignedDate") === dailyBrief.assignedDate
-      && textValue(record.payload, "briefVersion") === dailyBrief.version,
-  );
-  const savedReadingRecords = savedBrief
-    ? data.records.filter((record) => record.recordType === "reading_record" && record.parentId === savedBrief.id)
-    : [];
+  const currentTimezone = assignment?.timezone || assignmentTimezone;
 
   async function refresh() {
     try {
@@ -589,19 +596,52 @@ export function LabApp({ displayName }: { displayName: string }) {
     }
   }
 
-  useEffect(() => {
-    void refresh();
-  }, []);
+  async function refreshAssignment() {
+    setAssignmentLoading(true);
+    setAssignmentError("");
+    try {
+      const response = await fetch("/api/lab/assignment/today", { cache: "no-store" });
+      const result = (await response.json()) as TodayAssignmentResponse & { error?: string };
+      if (!response.ok) throw new Error(result.error || "Your private assignment could not be loaded.");
+      setAssignmentDate(result.learnerDate);
+      setAssignmentTimezone(result.timezone);
+      setAssignment(result.assignment ? {
+        ...result.assignment,
+        learnerDate: result.learnerDate,
+        timezone: result.timezone,
+        profileVersion: result.profile?.version ?? result.assignment.profileVersion ?? "unknown",
+        practiceMode: result.profile?.practiceMode ?? result.assignment.practiceMode ?? "Normal Week",
+        events: result.assignment.events ?? [],
+      } : null);
+    } catch (error) {
+      setAssignment(null);
+      setAssignmentError(error instanceof Error ? error.message : "Your private assignment could not be loaded.");
+    } finally {
+      setAssignmentLoading(false);
+    }
+  }
+
+  async function refreshAssignmentHistory() {
+    setAssignmentHistoryError("");
+    try {
+      const response = await fetch("/api/lab/assignments/history", { cache: "no-store" });
+      const result = (await response.json()) as { assignments?: AssignmentHistoryItem[]; error?: string };
+      if (!response.ok) throw new Error(result.error || "Assignment history could not be loaded.");
+      setAssignmentHistory(result.assignments ?? []);
+    } catch (error) {
+      setAssignmentHistory([]);
+      setAssignmentHistoryError(error instanceof Error ? error.message : "Assignment history could not be loaded.");
+    }
+  }
 
   useEffect(() => {
-    if (!savedBrief || !savedReadingRecords.length) return;
-    setBriefCarry(textValue(savedBrief.payload, "carryForward"));
-    setBriefChecks(Object.fromEntries(dailyBrief.readings.map((reading) => [reading.readingId, true])));
-    setBriefResponses(Object.fromEntries(dailyBrief.readings.map((reading) => {
-      const saved = savedReadingRecords.find((record) => textValue(record.payload, "readingId") === reading.readingId);
-      return [reading.readingId, saved ? textValue(saved.payload, "learnerResponse") : "Preserved in the original record."];
-    })));
-  }, [savedBrief?.id, savedReadingRecords.length]);
+    const initialLoad = window.setTimeout(() => {
+      void refresh();
+      void refreshAssignment();
+      void refreshAssignmentHistory();
+    }, 0);
+    return () => window.clearTimeout(initialLoad);
+  }, []);
 
   async function post(body: Record<string, unknown>): Promise<boolean> {
     setBusy(true);
@@ -624,32 +664,20 @@ export function LabApp({ displayName }: { displayName: string }) {
     }
   }
 
-  async function commitBrief() {
-    const incomplete = dailyBrief.readings.find(
-      (reading) => !briefChecks[reading.readingId] || !briefResponses[reading.readingId]?.trim(),
-    );
-    if (incomplete || !briefCarry.trim()) {
-      setNotice("Read every source, write an Independent First Pass for each, and record the idea you will carry forward.");
-      return;
-    }
-    const saved = await post({
-      operation: "commit_daily_brief",
-      briefVersion: dailyBrief.version,
-      assignedDate: dailyBrief.assignedDate,
-      timezone: dailyBrief.timezone,
-      carryForward: briefCarry.trim(),
-      readings: dailyBrief.readings.map((reading) => ({
-        ...reading,
-        assignedDate: dailyBrief.assignedDate,
-        assignedTimezone: dailyBrief.timezone,
-        learnerResponse: briefResponses[reading.readingId].trim(),
-        completionStatus: "completed",
-      })),
-    });
+  async function appendAssignmentEvent(
+    recordId: string,
+    eventType: string,
+    eventData: Record<string, unknown>,
+  ): Promise<boolean> {
+    const saved = await post({ operation: "append_event", recordId, eventType, eventData });
     if (saved) {
-      setNotice("Daily Brief and all four Reading Records are locked in your history.");
-      setView("snapshot");
+      await refreshAssignment();
+      await refreshAssignmentHistory();
+      setNotice(eventType === "completion"
+        ? "Today’s Brief is complete. The original assignment and every response remain preserved."
+        : "Independent First Pass preserved beside the original reading.");
     }
+    return saved;
   }
 
   async function commitSnapshot(event: FormEvent<HTMLFormElement>) {
@@ -660,7 +688,7 @@ export function LabApp({ displayName }: { displayName: string }) {
       recordType: "snapshot_judgment",
       parentId: sourceLead?.id ?? null,
       title: `${snapshot.company} — ${snapshot.disposition} at ${snapshot.confidence}%`,
-      payload: { ...snapshot, timezone: dailyBrief.timezone, timeboxMinutes: 20 },
+      payload: { ...snapshot, timezone: currentTimezone, timeboxMinutes: 20 },
     });
     if (saved) {
       setSnapshot(emptySnapshot);
@@ -677,7 +705,7 @@ export function LabApp({ displayName }: { displayName: string }) {
       recordType: "forecast",
       parentId: parent?.id ?? null,
       title: `Forecast — ${forecast.probability}% by ${forecast.resolutionDate}`,
-      payload: { ...forecast, timezone: dailyBrief.timezone, timeboxMinutes: 10, status: "open" },
+      payload: { ...forecast, timezone: currentTimezone, timeboxMinutes: 10, status: "open" },
     });
     if (saved) {
       setForecast(emptyForecast);
@@ -692,7 +720,7 @@ export function LabApp({ displayName }: { displayName: string }) {
       operation: "commit_record",
       recordType: "second_order_map",
       title: `Second-Order Map — ${secondOrder.trigger.slice(0, 90)}`,
-      payload: { ...secondOrder, timezone: dailyBrief.timezone },
+      payload: { ...secondOrder, timezone: currentTimezone },
     });
     if (saved) {
       setSecondOrder(emptyMap);
@@ -718,7 +746,7 @@ export function LabApp({ displayName }: { displayName: string }) {
       recordType: "founder_evidence_review",
       parentId: parent?.id ?? null,
       title: `${founderReview.company} — Founder Evidence Review`,
-      payload: { ...founderReview, timezone: dailyBrief.timezone },
+      payload: { ...founderReview, timezone: currentTimezone },
     });
     if (saved) {
       setFounderReview(emptyFounderReview());
@@ -854,7 +882,7 @@ export function LabApp({ displayName }: { displayName: string }) {
 
   const latestPlan = topLevelRecords.find((record) => record.recordType === "weekly_plan");
   const selectedUpdateRecord = data.records.find((record) => record.id === updateRecord);
-  const activeMode = (latestPlan ? textValue(latestPlan.payload, "mode") : "Normal Week") as PracticeMode;
+  const activeMode = (assignment?.practiceMode || (latestPlan ? textValue(latestPlan.payload, "mode") : "Normal Week")) as PracticeMode;
   const modeDefinition = practiceModes[activeMode] ?? practiceModes["Normal Week"];
   const progress = {
     briefs: topLevelRecords.filter((record) => record.recordType === "daily_brief").length,
@@ -895,7 +923,7 @@ export function LabApp({ displayName }: { displayName: string }) {
 
       <main className="workspace">
         <header className="topbar">
-          <div><span className="eyebrow">{formatBriefDate(dailyBrief.assignedDate)}</span><h1>{view === "today" ? `Good morning, ${displayName}.` : navItems.find((item) => item.id === view)?.label}</h1></div>
+          <div><span className="eyebrow">{formatBriefDate(assignmentDate, currentTimezone)}</span><h1>{view === "today" ? `Good morning, ${displayName}.` : navItems.find((item) => item.id === view)?.label}</h1></div>
           <button className="mode-chip" onClick={() => setView("plan")}><span>{activeMode}</span><strong>{modeDefinition.totalMinutes / 60}h</strong></button>
         </header>
 
@@ -904,16 +932,7 @@ export function LabApp({ displayName }: { displayName: string }) {
         {view === "today" && (
           <section className="view today-view">
             <div className="hero-grid">
-              <article className="hero-card">
-                <div className="hero-index">01</div>
-                <div className="hero-copy">
-                  <span className="eyebrow coral">Today’s judgment loop · 90 minutes</span>
-                  <h2>Read the evidence.<br />Then commit the view.</h2>
-                  <p>The Lab remembers what you believed before the outcome was obvious.</p>
-                  <button className="primary" onClick={() => setView("brief")}>{savedBrief ? "Reopen today’s sources" : "Begin with four readings"} <span>→</span></button>
-                </div>
-                <div className="loop-dial" aria-label={`${progress.snapshots} Snapshot Judgments preserved`}><strong>{String(progress.snapshots).padStart(2, "0")}</strong><span>judgments<br />preserved</span></div>
-              </article>
+              <DailyAssignmentView assignment={assignment} error={assignmentError} loading={assignmentLoading} variant="today" onOpenBrief={() => setView("brief")} onRetry={() => void refreshAssignment()} />
               <aside className="standard-card">
                 <span className="eyebrow">Active practice mode</span>
                 <h3>{activeMode}</h3>
@@ -926,7 +945,7 @@ export function LabApp({ displayName }: { displayName: string }) {
             <div className="section-heading"><div><span className="eyebrow">The work in front of you</span><h3>One loop, four commitments</h3></div><span className="quiet">Flexible blocks · no catch-up debt</span></div>
             <div className="commitment-grid">
               {[
-                ["01", "Daily Brief", savedBrief ? "Preserved" : "Four verified sources", `${dailyBrief.totalMinutes} min`, "brief"],
+                ["01", "Daily Brief", assignment ? assignment.state.replaceAll("_", " ") : "Awaiting accepted outcome", assignment?.brief ? `${assignment.brief.totalMinutes} min` : "No stale fallback", "brief"],
                 ["02", "Snapshot Judgment", "Commit the causal view", "20 min · evidence link required", "snapshot"],
                 ["03", "Forecast", "Make one falsifiable claim", "10 min · probability required", "forecast"],
                 ["04", "Preserve", "Append later evidence", "5 min · no rewriting", "history"],
@@ -954,33 +973,7 @@ export function LabApp({ displayName }: { displayName: string }) {
 
         {view === "brief" && (
           <section className="view">
-            <div className="intro-row">
-              <div><span className="eyebrow coral">Daily Brief · {dailyBrief.totalMinutes} minutes</span><h2>Four sources. Four different jobs.</h2></div>
-              <p>Open the original source, read the assigned material, then write your view before the Lab gives you any interpretation.</p>
-            </div>
-            {savedBrief && <div className="locked-banner"><strong>Committed {formatTime(savedBrief.committedAt)}</strong><span>The assignment and your responses are read-only. Source-status changes can be appended in History.</span></div>}
-            <div className="reading-list">
-              {dailyBrief.readings.map((reading, index) => (
-                <article className={briefChecks[reading.readingId] ? "reading-card complete" : "reading-card"} key={reading.readingId}>
-                  <div className="reading-order">0{index + 1}</div>
-                  <div className="reading-main">
-                    <div className="reading-meta"><span>{reading.lane}</span><span>{reading.estimatedMinutes} min</span><span>{reading.sourceRole}</span></div>
-                    <h3>{reading.title}</h3>
-                    <p className="source">{reading.authorOrOrganization} · {reading.publisher} · {reading.publishedDate}</p>
-                    <p className="reading-summary">{reading.labSummary}</p>
-                    <p className="assigned-section"><strong>Read:</strong> {reading.assignedSection}</p>
-                    <div className="teaching-note"><strong>Why this is assigned</strong><p>{reading.teachingPurpose}</p><strong>Carry question</strong><p>{reading.carryQuestion}</p></div>
-                    <div className="source-actions">
-                      <a className="article-link" href={reading.canonicalUrl} target="_blank" rel="noreferrer">Open original source <span>↗</span></a>
-                      <span>{reading.accessMode} · {reading.materialReviewed.replaceAll("_", " ")}</span>
-                    </div>
-                    <label className="reading-response"><span>Your Independent First Pass</span><textarea disabled={Boolean(savedBrief)} required rows={3} value={briefResponses[reading.readingId]} onChange={(event) => setBriefResponses((current) => ({ ...current, [reading.readingId]: event.target.value }))} placeholder="What claim mattered, what evidence supports it, and what remains uncertain?" /></label>
-                  </div>
-                  <label className="read-check"><input disabled={Boolean(savedBrief)} type="checkbox" checked={briefChecks[reading.readingId]} onChange={(event) => setBriefChecks((current) => ({ ...current, [reading.readingId]: event.target.checked }))} /><span>{briefChecks[reading.readingId] ? "Read" : "Mark read"}</span></label>
-                </article>
-              ))}
-            </div>
-            <div className="commit-panel"><label><span>What idea will you carry into today’s company judgment?</span><textarea disabled={Boolean(savedBrief)} value={briefCarry} onChange={(event) => setBriefCarry(event.target.value)} placeholder="Connect one reading to a company, Forecast, or decision." rows={3} /></label><button className="primary" onClick={commitBrief} disabled={busy || Boolean(savedBrief)}>{savedBrief ? "Daily Brief preserved" : busy ? "Preserving…" : "Commit four Reading Records"}</button></div>
+            <DailyAssignmentView assignment={assignment} error={assignmentError} loading={assignmentLoading} variant="brief" onRetry={() => void refreshAssignment()} onAppendEvent={appendAssignmentEvent} />
           </section>
         )}
 
@@ -988,7 +981,7 @@ export function LabApp({ displayName }: { displayName: string }) {
           <SourcingView
             records={data.records}
             events={data.events}
-            timezone={dailyBrief.timezone}
+            timezone={currentTimezone}
             busy={busy}
             post={post}
             announce={setNotice}
@@ -998,7 +991,7 @@ export function LabApp({ displayName }: { displayName: string }) {
         {view === "recruit" && (
           <RecruitingView
             records={data.records}
-            timezone={dailyBrief.timezone}
+            timezone={currentTimezone}
             busy={busy}
             post={post}
             announce={setNotice}
@@ -1008,7 +1001,7 @@ export function LabApp({ displayName }: { displayName: string }) {
         {view === "diligence" && (
           <DiligenceView
             records={data.records}
-            timezone={dailyBrief.timezone}
+            timezone={currentTimezone}
             busy={busy}
             post={post}
             announce={setNotice}
@@ -1018,7 +1011,7 @@ export function LabApp({ displayName }: { displayName: string }) {
         {view === "coach" && (
           <CoachView
             records={data.records}
-            timezone={dailyBrief.timezone}
+            timezone={currentTimezone}
             busy={busy}
             post={post}
             announce={setNotice}
@@ -1095,7 +1088,7 @@ export function LabApp({ displayName }: { displayName: string }) {
             <form className="judgment-form" onSubmit={commitCalibration}>
               <fieldset><legend><span>01</span> Resolve eligible Forecasts</legend><label>Review month<input required type="month" value={calibration.reviewMonth} onChange={(e) => setCalibration({ ...calibration, reviewMonth: e.target.value })} /></label>
                 {!openForecasts.length && <div className="locked-view"><span>No unresolved Forecasts</span><p>Complete the process review below. Your Brier score will remain unscored until an outcome resolves.</p></div>}
-                <div className="resolution-list">{openForecasts.map((record) => { const draft = resolutionDrafts[record.id] ?? emptyResolutionDraft(); const forecastTimezone = textValue(record.payload, "timezone") || dailyBrief.timezone; const canResolveNegative = dateInTimeZone(new Date(), forecastTimezone) > textValue(record.payload, "resolutionDate"); return <article className={draft.selected ? "resolution-row selected" : "resolution-row"} key={record.id}><label className="resolution-check"><input type="checkbox" checked={draft.selected} onChange={(e) => updateResolution(record.id, { selected: e.target.checked })} /><span><strong>{numberValue(record.payload, "probability")}%</strong>{textValue(record.payload, "claim")}</span></label>{draft.selected && <div className="resolution-fields"><label>Observed outcome<select value={draft.outcome} onChange={(e) => updateResolution(record.id, { outcome: Number(e.target.value) as ForecastOutcome })}><option value={1}>Occurred</option><option value={0} disabled={!canResolveNegative}>Did not occur</option></select>{!canResolveNegative && <small>A negative outcome can be resolved only after {textValue(record.payload, "resolutionDate")} has fully elapsed in {forecastTimezone}. An event that already occurred may be resolved early.</small>}</label><label>Resolution evidence<textarea required rows={2} value={draft.resolutionEvidence} onChange={(e) => updateResolution(record.id, { resolutionEvidence: e.target.value })} placeholder="What happened, stated without rewriting the original claim." /></label><label>Resolution source URL<input required type="url" value={draft.resolutionSource} onChange={(e) => updateResolution(record.id, { resolutionSource: e.target.value })} placeholder="https://" /></label></div>}</article>; })}</div>
+                <div className="resolution-list">{openForecasts.map((record) => { const draft = resolutionDrafts[record.id] ?? emptyResolutionDraft(); const forecastTimezone = textValue(record.payload, "timezone") || currentTimezone; const canResolveNegative = dateInTimeZone(new Date(), forecastTimezone) > textValue(record.payload, "resolutionDate"); return <article className={draft.selected ? "resolution-row selected" : "resolution-row"} key={record.id}><label className="resolution-check"><input type="checkbox" checked={draft.selected} onChange={(e) => updateResolution(record.id, { selected: e.target.checked })} /><span><strong>{numberValue(record.payload, "probability")}%</strong>{textValue(record.payload, "claim")}</span></label>{draft.selected && <div className="resolution-fields"><label>Observed outcome<select value={draft.outcome} onChange={(e) => updateResolution(record.id, { outcome: Number(e.target.value) as ForecastOutcome })}><option value={1}>Occurred</option><option value={0} disabled={!canResolveNegative}>Did not occur</option></select>{!canResolveNegative && <small>A negative outcome can be resolved only after {textValue(record.payload, "resolutionDate")} has fully elapsed in {forecastTimezone}. An event that already occurred may be resolved early.</small>}</label><label>Resolution evidence<textarea required rows={2} value={draft.resolutionEvidence} onChange={(e) => updateResolution(record.id, { resolutionEvidence: e.target.value })} placeholder="What happened, stated without rewriting the original claim." /></label><label>Resolution source URL<input required type="url" value={draft.resolutionSource} onChange={(e) => updateResolution(record.id, { resolutionSource: e.target.value })} placeholder="https://" /></label></div>}</article>; })}</div>
                 <div className="score-card"><span className="eyebrow">Brier score</span><strong>{previewBrier ?? "—"}</strong><p>0 is perfect. Lower is better. The score uses the original probability and the observed binary outcome.</p></div>
               </fieldset>
               <fieldset><legend><span>02</span> Compare investment judgments with later evidence</legend>{!priorJudgments.length ? <div className="locked-view"><span>No prior company judgments</span><p>Record that absence explicitly below; future reviews will compare locked Snapshots and Underwrites.</p></div> : <div className="judgment-choice-list">{priorJudgments.map((record) => <label className="judgment-choice" key={record.id}><input type="checkbox" checked={reviewedJudgmentIds.includes(record.id)} onChange={(e) => setReviewedJudgmentIds((current) => e.target.checked ? [...current, record.id] : current.filter((id) => id !== record.id))} /><span><strong>{recordLabel(record.recordType)}</strong>{record.title}</span></label>)}</div>}<label>Later evidence<textarea required rows={3} value={calibration.laterEvidence} onChange={(e) => setCalibration({ ...calibration, laterEvidence: e.target.value })} placeholder="What became observable after the original Snapshot or Underwrite? Cite the decisive evidence in the text or append its source in History." /></label><label>Judgment comparison<textarea required rows={3} value={calibration.judgmentComparison} onChange={(e) => setCalibration({ ...calibration, judgmentComparison: e.target.value })} placeholder="What did the original judgment get right, wrong, or leave unresolved—and was the process sound?" /></label></fieldset>
@@ -1121,6 +1114,17 @@ export function LabApp({ displayName }: { displayName: string }) {
         {view === "history" && (
           <section className="view">
             <div className="intro-row"><div><span className="eyebrow coral">Private Learning Record</span><h2>Originals stay. Updates accumulate.</h2></div><p>Resolve Forecasts, record corrections, and add hindsight here. Nothing below edits the evidence you committed earlier.</p></div>
+            <section className="delivery-ledger" aria-labelledby="daily-delivery-ledger-title">
+              <div className="delivery-ledger-head"><div><span className="eyebrow">Daily delivery ledger</span><h3 id="daily-delivery-ledger-title">Assignment, operator, and archive evidence</h3></div><p>{assignmentHistory.length} preserved assignment outcome{assignmentHistory.length === 1 ? "" : "s"}</p></div>
+              {assignmentHistoryError && <p className="delivery-ledger-error" role="alert">{assignmentHistoryError}</p>}
+              {!assignmentHistoryError && assignmentHistory.length === 0 && <p className="delivery-ledger-empty">No Daily Assignment has been preserved yet.</p>}
+              <div className="delivery-ledger-list">{assignmentHistory.map((item) => (
+                <article className="delivery-ledger-row" key={item.id}>
+                  <div><time>{formatBriefDate(item.learnerDate, item.profile.timezone)}</time><strong>{item.evidence.title}</strong><span>{item.state.replaceAll("_", " ")} · {item.profile.practiceMode} · profile {item.profile.version}</span></div>
+                  <div><span>Operator slot {formatTime(item.run.scheduledFor)}</span><strong className={item.archive.status === "preserved" ? "archive-preserved" : "archive-pending"}>{item.archive.status === "preserved" ? "Archive preserved" : "Archive pending"}</strong>{item.archive.preservedAt && <time>Preserved {formatTime(item.archive.preservedAt)}</time>}</div>
+                </article>
+              ))}</div>
+            </section>
             <div className="history-tools"><label>Show<select value={historyFilter} onChange={(e) => setHistoryFilter(e.target.value)}><option value="all">All records</option><option value="daily_brief">Daily Briefs</option><option value="sourcing_experiment">Sourcing Experiments</option><option value="sourcing_lead">Sourcing Leads</option><option value="recruiting_opportunity">Recruiting Opportunities</option><option value="opportunity_observation">Opportunity Observations</option><option value="opportunity_monitor_run">Opportunity Monitor Runs</option><option value="opportunity_monitor_registration">Opportunity Monitor Registration</option><option value="recruiting_interaction">Recruiting Interactions</option><option value="application_attempt">Application Attempts</option><option value="interview_practice">Interview Practice</option><option value="portfolio_candidate">Portfolio Candidates</option><option value="snapshot_judgment">Snapshots</option><option value="forecast">Forecasts</option><option value="second_order_map">Second-Order Maps</option><option value="founder_evidence_review">Founder Evidence Reviews</option><option value="weekly_underwrite">Underwrites</option><option value="diligence_case">Diligence Cases</option><option value="diligence_stage">Diligence Stages</option><option value="coach_request">Coach Requests</option><option value="coach_feedback">Coach Feedback</option><option value="revision_attempt">Revision Attempts</option><option value="mastery_evidence">Mastery Evidence</option><option value="calibration_review">Calibration Reviews</option><option value="weekly_plan">Practice plans</option></select></label><span>{filteredRecords.length} immutable submission{filteredRecords.length === 1 ? "" : "s"}</span></div>
             <div className="history-layout">
               <div className="timeline">
@@ -1130,7 +1134,7 @@ export function LabApp({ displayName }: { displayName: string }) {
                   const childReadings = data.records.filter((item) => item.parentId === record.id && item.recordType === "reading_record");
                   const events = data.events.filter((event) => event.recordId === record.id || childReadings.some((reading) => reading.id === event.recordId));
                   const founderSource = record.recordType === "founder_evidence_review" ? textValue(record.payload, "sourceUrlOrContext") : "";
-                  return <article className="timeline-record" key={record.id}><span className="timeline-dot" /><div className="record-head"><span>{recordLabel(record.recordType)}</span><time>{formatTime(record.committedAt)}</time></div><h3>{record.title}</h3><p>{recordSummary(record)}</p>{founderSource.startsWith("http") && <a className="history-source-link" href={founderSource} target="_blank" rel="noreferrer">Open Founder Evidence source ↗</a>}{childReadings.length > 0 && <div className="reading-archive">{childReadings.map((reading) => <a key={reading.id} href={textValue(reading.payload, "canonicalUrl")} target="_blank" rel="noreferrer"><span>{textValue(reading.payload, "lane")}</span><strong>{reading.title}</strong><small>{textValue(reading.payload, "learnerResponse")}</small></a>)}</div>}{keyEvidence(record).length > 0 && <details className="evidence-details"><summary>Inspect committed evidence</summary>{keyEvidence(record).map(([label, value]) => <div key={label}><strong>{label}</strong><p>{value}</p></div>)}</details>}{events.map((event) => { const resolutionSource = textValue(event.eventData, "resolutionSource"); const reviewId = textValue(event.eventData, "calibrationReviewId"); const linkedReview = reviewId ? data.records.find((item) => item.id === reviewId) : undefined; return <div className="event" key={event.id}><span>{eventLabel(event.eventType)}</span><time>{formatTime(event.occurredAt)}</time><p>{textValue(event.eventData, "text")}</p>{(resolutionSource || linkedReview) && <div className="event-links">{resolutionSource && <a href={resolutionSource} target="_blank" rel="noreferrer">Open resolution source ↗</a>}{linkedReview && <span>Recorded in {linkedReview.title}</span>}</div>}</div>; })}</article>;
+                  return <article className="timeline-record" key={record.id}><span className="timeline-dot" /><div className="record-head"><span>{recordLabel(record.recordType)}</span><time>{formatTime(record.committedAt)}</time></div><h3>{record.title}</h3><p>{recordSummary(record)}</p>{founderSource.startsWith("http") && <a className="history-source-link" href={founderSource} target="_blank" rel="noreferrer">Open Founder Evidence source ↗</a>}{childReadings.length > 0 && <div className="reading-archive">{childReadings.map((reading) => <a key={reading.id} href={textValue(reading.payload, "canonicalUrl")} target="_blank" rel="noreferrer"><span>{textValue(reading.payload, "lane")}</span><strong>{reading.title}</strong><small>{data.events.some((event) => event.recordId === reading.id && event.eventType === "learner_response") ? "Independent First Pass preserved" : "Awaiting Independent First Pass"}</small></a>)}</div>}{keyEvidence(record).length > 0 && <details className="evidence-details"><summary>Inspect committed evidence</summary>{keyEvidence(record).map(([label, value]) => <div key={label}><strong>{label}</strong><p>{value}</p></div>)}</details>}{events.map((event) => <AssignmentEventView event={event} formatTimestamp={formatTime} key={event.id} />)}</article>;
                 })}
               </div>
               <aside className="append-card"><span className="eyebrow coral">Append, never overwrite</span><h3>Add later evidence</h3><p>Use this for reflection, correction, source status, or later usefulness. Resolve Forecasts through Calibration; complete required Sourcing, Recruiting, Diligence, and Judgment Coach state changes in their typed workspaces.</p><form onSubmit={appendUpdate}><label>Original record<select required value={updateRecord} onChange={(e) => { setUpdateRecord(e.target.value); setUpdatePrivateEvidenceConfirmed(false); }}><option value="">Choose a record…</option>{data.records.filter((record) => record.recordType !== "sourcing_lead" && !(RECRUITING_RECORD_TYPES as readonly string[]).includes(record.recordType)).map((record) => <option key={record.id} value={record.id}>{recordLabel(record.recordType)} · {record.title}</option>)}</select></label><label>Update type<select value={updateType} onChange={(e) => setUpdateType(e.target.value)}><option value="reflection">Reflection</option><option value="later_usefulness">Later usefulness</option><option value="source_status">Source status</option><option value="metadata_correction">Metadata correction</option><option value="missed_practice">Missed practice</option></select></label><label>Dated update<textarea required rows={5} value={updateText} onChange={(e) => setUpdateText(e.target.value)} placeholder="State the new evidence, source, outcome, or correction. Do not restate history as if you knew it earlier." /></label>{(selectedUpdateRecord?.recordType === "founder_evidence_review" || (selectedUpdateRecord && (DILIGENCE_RECORD_TYPES as readonly string[]).includes(selectedUpdateRecord.recordType)) || (selectedUpdateRecord && (COACH_RECORD_TYPES as readonly string[]).includes(selectedUpdateRecord.recordType))) && <label className="privacy-confirmation"><input required type="checkbox" checked={updatePrivateEvidenceConfirmed} onChange={(e) => setUpdatePrivateEvidenceConfirmed(e.target.checked)} />I confirm this update preserves the original and contains only bounded, approved evidence without raw transcripts, contact details, ratings, secrets, or unapproved confidential material.</label>}<button className="primary" disabled={busy}>{busy ? "Appending…" : "Append update"}</button></form></aside>

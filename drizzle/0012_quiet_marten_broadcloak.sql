@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `idx_lab_events_unique_assignment_committed` ON `lab_events` (`record_id`) WHERE "lab_events"."event_type" = 'assignment_committed';

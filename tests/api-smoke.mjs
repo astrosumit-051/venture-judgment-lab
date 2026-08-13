@@ -4,7 +4,7 @@ const baseUrl = process.argv[2] ?? "http://localhost:3000";
 const suffix = `${Date.now()}`;
 const headers = {
   "content-type": "application/json",
-  "oai-authenticated-user-id": `verification-${suffix}`,
+  "oai-authenticated-user-id": process.env.LAB_SMOKE_OWNER_ID ?? `verification-${suffix}`,
   "oai-authenticated-user-email": `verification-${suffix}@example.com`,
 };
 function chicagoDate(daysFromToday = 0) {
@@ -1425,6 +1425,16 @@ const repeatedRegistration = await post({ operation: "register_opportunity_monit
 assert.equal(repeatedRegistration.id, monitorRegistration.id);
 assert.equal(repeatedRegistration.idempotent, true);
 
+const labAutomationRegistration = await post({
+  operation: "register_lab_automation",
+  timezone: "America/Chicago",
+  practiceMode: "Normal Week",
+  effectiveLearnerDate: todayInChicago,
+  expectedWeekdays: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+  notificationPreference: "ready_and_intervention",
+});
+assert.equal(labAutomationRegistration.registered, true);
+
 const initialCoachQueue = await coachAutomationRequest("GET", undefined, 200);
 assert.equal(initialCoachQueue.queue.length, 7);
 assert.equal(initialCoachQueue.recurringPatterns.length, 0);
@@ -1668,11 +1678,12 @@ await post({
 
 const currentMonitorState = await automationRequest("GET", undefined, 200);
 assert.equal(currentMonitorState.lastRun.id, secondMonitorRun.id);
-assert.equal(currentMonitorState.monitorHealth.missedScheduledRun, false);
+assert.equal(currentMonitorState.monitorHealth.missedScheduledRun, true);
+assert.ok(currentMonitorState.monitorHealth.expectedScheduledFor);
 assert.equal(currentMonitorState.opportunities.find((opportunity) => opportunity.officialUrl.includes("4633431005")).status, "Closed");
 
 const final = await fetch(`${baseUrl}/api/lab`, { headers }).then((response) => response.json());
-assert.equal(final.records.length, 61);
+assert.equal(final.records.length, 62);
 assert.equal(final.events.length, 11);
 const lockedSourcingLead = final.records.find((record) => record.id === sourcingLead.id);
 assert.equal(lockedSourcingLead.payload.normalizedCompanyDomain, "verification.example.com");
@@ -1699,6 +1710,7 @@ assert.equal(final.records.find((record) => record.id === recruitingPractice.id)
 assert.equal(final.records.find((record) => record.id === recruitingPortfolio.id).payload.publicationState, "Private candidate");
 assert.equal(final.records.filter((record) => record.parentId === recruitingOpportunity.id).length, 7);
 assert.equal(final.records.filter((record) => record.recordType === "opportunity_monitor_registration").length, 1);
+assert.equal(final.records.filter((record) => record.recordType === "lab_automation_registration").length, 1);
 assert.equal(final.records.filter((record) => record.recordType === "opportunity_monitor_run").length, 2);
 assert.equal(final.records.filter((record) => record.recordType === "recruiting_opportunity" && record.payload.officialUrl.includes("4633431005")).length, 1);
 assert.equal(final.records.filter((record) => record.recordType === "opportunity_observation" && record.payload.sourceReference.includes("bvpanalyst")).length, 1);
@@ -1731,4 +1743,4 @@ assert.ok(corroboratedMastery);
 assert.equal(corroboratedMastery.payload.latestTwoClear, true);
 assert.equal(corroboratedMastery.payload.companyIdentities.length, 2);
 
-console.log("API smoke passed: 61 immutable records, 11 append-only events, an exact seven-stage Diligence Case, a bounded owner-isolated Coach round trip with revision-last mastery recomputation, transactional concurrent counts, queue-scoped diagnoses, distinct custom recurring-error keys, and append-only correction history, cycle-safe idempotent opportunity monitoring, prospective experiment and forecast boundaries, typed sourcing and recruiting evidence, external-action approval gates, Founder Evidence safeguards, and calibration scoring intact.");
+console.log("API smoke passed: 62 immutable records, 11 append-only events, an exact seven-stage Diligence Case, a bounded owner-isolated Coach round trip with revision-last mastery recomputation, transactional concurrent counts, queue-scoped diagnoses, distinct custom recurring-error keys, and append-only correction history, cycle-safe idempotent opportunity monitoring, prospective experiment and forecast boundaries, typed sourcing and recruiting evidence, external-action approval gates, Founder Evidence safeguards, and calibration scoring intact.");

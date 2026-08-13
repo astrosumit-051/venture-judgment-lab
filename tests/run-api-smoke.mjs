@@ -1,15 +1,44 @@
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const port = process.env.LAB_API_SMOKE_PORT ?? "4319";
+async function availablePort() {
+  if (process.env.LAB_API_SMOKE_PORT) return process.env.LAB_API_SMOKE_PORT;
+  const probe = createServer();
+  await new Promise((resolve, reject) => {
+    probe.once("error", reject);
+    probe.listen(0, "127.0.0.1", resolve);
+  });
+  const address = probe.address();
+  const port = typeof address === "object" && address ? String(address.port) : null;
+  await new Promise((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()));
+  if (!port) throw new Error("Could not reserve an isolated API smoke port.");
+  return port;
+}
+
+const port = await availablePort();
 const baseUrl = `http://localhost:${port}`;
 const persistencePath = await mkdtemp(join(tmpdir(), "venture-judgment-lab-api-smoke-"));
+const smokeClock = new Date();
+smokeClock.setUTCMinutes(0, 0, 0);
+while (true) {
+  const eastern = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(smokeClock).map((part) => [part.type, part.value]));
+  if (!new Set(["Sat", "Sun"]).has(eastern.weekday) && eastern.hour === "08") break;
+  smokeClock.setTime(smokeClock.getTime() - 3_600_000);
+}
 const runEnv = {
   ...process.env,
   LAB_API_SMOKE: "1",
+  LAB_API_SMOKE_NOW: smokeClock.toISOString(),
   LAB_AUTOMATION_TOKEN: `local-opportunity-monitor-verification-${Date.now()}`,
+  LAB_SMOKE_OWNER_ID: `verification-owner-${Date.now()}`,
   LAB_TEST_PERSIST_PATH: persistencePath,
 };
 const server = spawn("npm", ["run", "dev", "--", "--port", port], {
@@ -48,9 +77,18 @@ function runSmoke() {
   });
 }
 
+function runPhase3Smoke() {
+  return new Promise((resolve, reject) => {
+    const smoke = spawn(process.execPath, ["tests/phase3-api-smoke.mjs", baseUrl], { env: runEnv, stdio: "inherit" });
+    smoke.once("error", reject);
+    smoke.once("exit", (code, signal) => code === 0 ? resolve() : reject(new Error(`Phase 3 API smoke exited with ${code ?? signal}.`)));
+  });
+}
+
 try {
   await waitForServer();
   await runSmoke();
+  await runPhase3Smoke();
 } finally {
   server.kill("SIGTERM");
   await Promise.race([

@@ -12,6 +12,7 @@ const { d1, r2 } = hostingConfig;
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const apiSmokeToken = process.env.LAB_API_SMOKE === "1" ? process.env.LAB_AUTOMATION_TOKEN : undefined;
 const apiSmokePersistPath = process.env.LAB_API_SMOKE === "1" ? process.env.LAB_TEST_PERSIST_PATH : undefined;
+const apiSmokeNow = process.env.LAB_API_SMOKE === "1" ? process.env.LAB_API_SMOKE_NOW : undefined;
 
 const localBindingConfig = {
   main: "./worker/index.ts",
@@ -33,7 +34,12 @@ const localBindingConfig = {
         },
       ]
     : [],
-  ...(apiSmokeToken ? { vars: { LAB_AUTOMATION_TOKEN: apiSmokeToken } } : {}),
+  ...(apiSmokeToken ? {
+    vars: {
+      LAB_AUTOMATION_TOKEN: apiSmokeToken,
+      ...(apiSmokeNow ? { LAB_API_SMOKE_NOW: apiSmokeNow } : {}),
+    },
+  } : {}),
 };
 
 export default defineConfig(async () => {

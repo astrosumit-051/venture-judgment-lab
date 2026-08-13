@@ -9,6 +9,8 @@ import {
 import { ensureLabSchema } from "@/db/runtime";
 import { FOUNDER_DIMENSIONS, FOUNDER_SOURCE_TYPES } from "@/app/founderEvidence";
 import { configuredAutomationFingerprint } from "@/app/automationAuth";
+import { LAB_AUTOMATION_CAPABILITIES } from "@/app/automationRegistration";
+import { ASSIGNMENT_EVENT_TYPES, completionReadiness, validateAssignmentEvent } from "@/app/assignmentEvents";
 import { COACH_RECORD_TYPES, isCoachSource, validateCoachPayload, type CoachDimension } from "@/app/coach";
 import {
   coachDimensionHistoryVersion,
@@ -47,7 +49,6 @@ import {
   SOURCING_CORRECTION_FIELDS,
   SOURCING_DISPOSITIONS,
   SOURCING_OUTCOMES,
-  SOURCING_STAGES,
   SOURCING_UPDATE_KINDS,
   SOURCING_VISIBILITIES,
   sourcingStageIndex,
@@ -129,6 +130,7 @@ const allowedEventTypes = new Set([
   "coach_feedback",
   "later_usefulness",
   "missed_practice",
+  ...ASSIGNMENT_EVENT_TYPES,
 ]);
 
 async function ownerId(): Promise<string | null> {
@@ -505,6 +507,123 @@ export async function POST(request: Request) {
   const db = await ensureLabSchema();
   const operation = cleanText(body.operation, 40);
 
+  if (operation === "register_lab_automation") {
+    const fingerprint = await configuredAutomationFingerprint();
+    if (!fingerprint) return Response.json({ error: "The private automation credential is not configured in this runtime." }, { status: 503 });
+    const timezone = cleanText(body.timezone, 100);
+    const practiceMode = cleanText(body.practiceMode, 100);
+    const effectiveLearnerDate = cleanText(body.effectiveLearnerDate, 20);
+    const notificationPreference = cleanText(body.notificationPreference, 100) || "ready_and_intervention";
+    const expectedWeekdays = Array.isArray(body.expectedWeekdays)
+      ? body.expectedWeekdays.map((value) => cleanText(value, 3)).filter(Boolean)
+      : [];
+    const allowedWeekdays = new Set(["Mon", "Tue", "Wed", "Thu", "Fri"]);
+    const modeDays: Record<string, [number, number]> = {
+      "Normal Week": [5, 5],
+      "Monthly Calibration Week": [5, 5],
+      "Recruiting Surge": [3, 5],
+      "Exam Mode": [1, 1],
+      "Investing Milestone Substitution": [0, 1],
+    };
+    const modeBounds = modeDays[practiceMode];
+    if (!isValidTimeZone(timezone) || !isCanonicalDate(effectiveLearnerDate) || !modeBounds
+      || expectedWeekdays.some((day) => !allowedWeekdays.has(day))
+      || new Set(expectedWeekdays).size !== expectedWeekdays.length
+      || expectedWeekdays.length < modeBounds[0] || expectedWeekdays.length > modeBounds[1]) {
+      return Response.json({ error: "Provide a valid immutable Lab Profile timezone, practice mode, effective date, and expected weekdays." }, { status: 400 });
+    }
+    if (notificationPreference !== "ready_and_intervention") {
+      return Response.json({ error: "The first operating profile supports only bounded ready and intervention notifications." }, { status: 400 });
+    }
+    const existingCredential = await db.prepare(
+      `SELECT id, owner_id, record_type FROM lab_records
+       WHERE record_type IN ('lab_automation_registration', 'opportunity_monitor_registration')
+       AND json_extract(payload_json, '$.tokenFingerprint') = ?
+       ORDER BY CASE record_type WHEN 'lab_automation_registration' THEN 0 ELSE 1 END LIMIT 1`,
+    ).bind(fingerprint).first<{ id: string; owner_id: string; record_type: string }>();
+    if (existingCredential && existingCredential.owner_id !== owner) {
+      return Response.json({ error: "This automation credential is already registered to another private owner." }, { status: 409 });
+    }
+    const existingProfile = await db.prepare(
+      `SELECT id, profile_version, timezone, practice_mode, expected_weekdays_json, notification_preference
+       FROM lab_profiles WHERE owner_id = ? AND effective_learner_date = ? LIMIT 1`,
+    ).bind(owner, effectiveLearnerDate).first<{
+      id: string; profile_version: string; timezone: string; practice_mode: string;
+      expected_weekdays_json: string; notification_preference: string;
+    }>();
+    if (existingProfile) {
+      const same = existingProfile.timezone === timezone
+        && existingProfile.practice_mode === practiceMode
+        && existingProfile.expected_weekdays_json === JSON.stringify(expectedWeekdays)
+        && existingProfile.notification_preference === notificationPreference;
+      if (!same) return Response.json({ error: "This effective learner date already has a different immutable Lab Profile." }, { status: 409 });
+      return Response.json({
+        registrationId: existingCredential?.record_type === "lab_automation_registration" ? existingCredential.id : null,
+        profileId: existingProfile.id,
+        profileVersion: existingProfile.profile_version,
+        registered: Boolean(existingCredential?.record_type === "lab_automation_registration"),
+        idempotent: true,
+      });
+    }
+    const latestProfile = await db.prepare(
+      `SELECT profile_version, effective_learner_date FROM lab_profiles
+       WHERE owner_id = ? ORDER BY effective_learner_date DESC, created_at DESC, id DESC LIMIT 1`,
+    ).bind(owner).first<{ profile_version: string; effective_learner_date: string }>();
+    if (latestProfile && effectiveLearnerDate <= latestProfile.effective_learner_date) {
+      return Response.json({
+        error: "A changed Lab Profile must append on a later effective learner date; historical profile resolution cannot be rewritten.",
+      }, { status: 409 });
+    }
+    if (latestProfile && effectiveLearnerDate <= dateInTimeZone(new Date(), timezone)) {
+      return Response.json({ error: "A changed Lab Profile must become effective on a future learner date." }, { status: 409 });
+    }
+    const now = new Date().toISOString();
+    const profileId = crypto.randomUUID();
+    const profileVersion = `profile-${effectiveLearnerDate}`;
+    const registrationId = existingCredential?.record_type === "lab_automation_registration" ? existingCredential.id : crypto.randomUUID();
+    const statements: D1PreparedStatement[] = [];
+    statements.push(db.prepare(
+      `INSERT INTO lab_automation_credentials (token_fingerprint, owner_id, created_at)
+       VALUES (?, ?, ?) ON CONFLICT(token_fingerprint) DO NOTHING`,
+    ).bind(fingerprint, owner, now));
+    if (existingCredential?.record_type !== "lab_automation_registration") {
+      statements.push(insertRecord(db, {
+        id: registrationId,
+        owner,
+        recordType: "lab_automation_registration",
+        parentId: null,
+        title: "Venture Judgment Lab — private automation registration",
+        payload: {
+          automationKind: "venture_judgment_lab",
+          tokenFingerprint: fingerprint,
+          registeredAt: now,
+          schedule: "Weekdays 7:00 AM America/New_York",
+          capabilities: LAB_AUTOMATION_CAPABILITIES,
+          status: "active",
+        },
+        now,
+      }));
+    }
+    statements.push(db.prepare(
+      `INSERT INTO lab_profiles
+       (id, owner_id, profile_version, timezone, practice_mode, expected_weekdays_json,
+        notification_preference, effective_learner_date, automation_binding, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      profileId, owner, profileVersion, timezone, practiceMode, JSON.stringify(expectedWeekdays),
+      notificationPreference, effectiveLearnerDate, registrationId, now,
+    ));
+    try {
+      await db.batch(statements);
+    } catch (error) {
+      if (error instanceof Error && error.message.toLowerCase().includes("unique")) {
+        return Response.json({ error: "The immutable automation registration or Lab Profile was concurrently created with different evidence." }, { status: 409 });
+      }
+      throw error;
+    }
+    return Response.json({ registrationId, profileId, profileVersion, registered: true, idempotent: false }, { status: 201 });
+  }
+
   if (operation === "register_opportunity_monitor") {
     const fingerprint = await configuredAutomationFingerprint();
     if (!fingerprint) {
@@ -513,44 +632,51 @@ export async function POST(request: Request) {
     const existingOwnerRegistration = await db
       .prepare(
         `SELECT id FROM lab_records WHERE owner_id = ? AND record_type = 'opportunity_monitor_registration'
-         AND json_extract(payload_json, '$.automationKind') = 'opportunity_monitor' LIMIT 1`,
+         AND json_extract(payload_json, '$.automationKind') = 'opportunity_monitor'
+         AND json_extract(payload_json, '$.status') = 'active' LIMIT 1`,
       )
       .bind(owner)
       .first<{ id: string }>();
     if (existingOwnerRegistration) return Response.json({ id: existingOwnerRegistration.id, registered: true, idempotent: true });
     const existingFingerprint = await db
       .prepare(
-        `SELECT id FROM lab_records WHERE record_type = 'opportunity_monitor_registration'
+        `SELECT id, owner_id FROM lab_records WHERE record_type IN ('opportunity_monitor_registration', 'lab_automation_registration')
          AND json_extract(payload_json, '$.tokenFingerprint') = ? LIMIT 1`,
       )
       .bind(fingerprint)
-      .first<{ id: string }>();
-    if (existingFingerprint) {
+      .first<{ id: string; owner_id: string }>();
+    if (existingFingerprint && existingFingerprint.owner_id !== owner) {
       return Response.json({ error: "This automation credential is already registered to another private owner." }, { status: 409 });
     }
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     try {
-      await insertRecord(db, {
-        id,
-        owner,
-        recordType: "opportunity_monitor_registration",
-        parentId: null,
-        title: "Official Opportunity Monitor — private registration",
-        payload: {
-          automationKind: "opportunity_monitor",
-          tokenFingerprint: fingerprint,
-          registeredAt: now,
-          schedule: "Monday 8:00 AM America/New_York",
-          status: "active",
-        },
-        now,
-      }).run();
+      await db.batch([
+        db.prepare(
+          `INSERT INTO lab_automation_credentials (token_fingerprint, owner_id, created_at)
+           VALUES (?, ?, ?) ON CONFLICT(token_fingerprint) DO NOTHING`,
+        ).bind(fingerprint, owner, now),
+        insertRecord(db, {
+          id,
+          owner,
+          recordType: "opportunity_monitor_registration",
+          parentId: null,
+          title: "Official Opportunity Monitor — private registration",
+          payload: {
+            automationKind: "opportunity_monitor",
+            tokenFingerprint: fingerprint,
+            registeredAt: now,
+            schedule: "Monday 8:00 AM America/New_York",
+            status: "active",
+          },
+          now,
+        }),
+      ]);
     } catch (error) {
       if (error instanceof Error && error.message.toLowerCase().includes("unique")) {
         const racedRegistration = await db
           .prepare(
-            `SELECT id, owner_id FROM lab_records WHERE record_type = 'opportunity_monitor_registration'
+            `SELECT id, owner_id FROM lab_records WHERE record_type IN ('opportunity_monitor_registration', 'lab_automation_registration')
              AND json_extract(payload_json, '$.tokenFingerprint') = ? LIMIT 1`,
           )
           .bind(fingerprint)
@@ -1503,10 +1629,69 @@ export async function POST(request: Request) {
       return Response.json({ error: "Choose a record, update type, and valid update body." }, { status: 400 });
     }
     const parent = await db
-      .prepare("SELECT id, record_type FROM lab_records WHERE id = ? AND owner_id = ?")
+      .prepare("SELECT id, record_type, payload_json FROM lab_records WHERE id = ? AND owner_id = ?")
       .bind(recordId, owner)
-      .first<{ id: string; record_type: string }>();
+      .first<{ id: string; record_type: string; payload_json: string }>();
     if (!parent) return Response.json({ error: "The record was not found." }, { status: 404 });
+    const assignmentOnlyEvent = new Set([
+      "learner_response", "artifact_link", "replacement_link", "revisit",
+      "continuation", "completion", "missed_practice",
+    ]).has(eventType);
+    if (
+      (parent.record_type === "daily_brief" || parent.record_type === "reading_record")
+      && (ASSIGNMENT_EVENT_TYPES as readonly string[]).includes(eventType)
+      || assignmentOnlyEvent
+    ) {
+      const assignmentEventError = validateAssignmentEvent(parent.record_type, eventType, eventData);
+      if (assignmentEventError) return Response.json({ error: assignmentEventError }, { status: 400 });
+      if (eventType === "artifact_link") {
+        const artifact = await db.prepare(
+          "SELECT id, record_type FROM lab_records WHERE id = ? AND owner_id = ? LIMIT 1",
+        ).bind(cleanText(eventData.artifactRecordId, 80), owner).first<{ id: string; record_type: string }>();
+        if (!artifact || artifact.record_type !== cleanText(eventData.artifactType, 80)) {
+          return Response.json({ error: "The linked private artifact was not found with the declared type." }, { status: 404 });
+        }
+      }
+      if (eventType === "completion" || eventType === "missed_practice") {
+        const assignmentPayload = parseJson(parent.payload_json);
+        const assignedDate = cleanText(assignmentPayload.assignedDate, 20);
+        if (eventType === "completion" && eventData.completedLearnerDate !== assignedDate) {
+          return Response.json({ error: "Completion must preserve the Daily Brief's actual learner date." }, { status: 400 });
+        }
+        if (eventType === "completion") {
+          const [readings, responses] = await Promise.all([
+            db.prepare(
+              `SELECT id FROM lab_records WHERE owner_id = ? AND parent_id = ?
+               AND record_type = 'reading_record' ORDER BY id ASC`,
+            ).bind(owner, recordId).all<{ id: string }>(),
+            db.prepare(
+              `SELECT event.record_id FROM lab_events event
+               JOIN lab_records reading ON reading.id = event.record_id AND reading.owner_id = event.owner_id
+               WHERE event.owner_id = ? AND reading.parent_id = ? AND reading.record_type = 'reading_record'
+               AND event.event_type = 'learner_response' ORDER BY event.record_id ASC, event.id ASC`,
+            ).bind(owner, recordId).all<{ record_id: string }>(),
+          ]);
+          const completionError = completionReadiness(
+            (readings.results ?? []).map((reading) => reading.id),
+            (responses.results ?? []).map((response) => response.record_id),
+          );
+          if (completionError) return Response.json({ error: completionError }, { status: 409 });
+        }
+        if (eventType === "missed_practice") {
+          const timezone = cleanText(assignmentPayload.timezone, 100);
+          if (eventData.learnerDate !== assignedDate || !isValidTimeZone(timezone) || dateInTimeZone(new Date(), timezone) <= assignedDate) {
+            return Response.json({ error: "Missed practice can be preserved only after the matching learner date has ended." }, { status: 400 });
+          }
+        }
+        const existingTerminal = await db.prepare(
+          `SELECT id, event_type FROM lab_events WHERE owner_id = ? AND record_id = ?
+           AND event_type IN ('completion', 'missed_practice') LIMIT 1`,
+        ).bind(owner, recordId).first<{ id: string; event_type: string }>();
+        if (existingTerminal) {
+          return Response.json({ error: `This Daily Brief already has immutable ${existingTerminal.event_type.replaceAll("_", " ")} evidence.` }, { status: 409 });
+        }
+      }
+    }
     if (parent.record_type === "sourcing_lead") {
       return Response.json({ error: "Append Sourcing Lead evidence through the staged sourcing workflow so funnel integrity is preserved." }, { status: 400 });
     }
@@ -1558,14 +1743,32 @@ export async function POST(request: Request) {
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    await db
-      .prepare(
-        `INSERT INTO lab_events
-         (id, owner_id, record_id, event_type, event_json, occurred_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .bind(id, owner, recordId, eventType, JSON.stringify(eventData), now, now)
-      .run();
+    try {
+      await db
+        .prepare(
+          `INSERT INTO lab_events
+           (id, owner_id, record_id, event_type, event_json, occurred_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(id, owner, recordId, eventType, JSON.stringify(eventData), now, now)
+        .run();
+    } catch (error) {
+      if (
+        (eventType === "completion" || eventType === "missed_practice")
+        && error instanceof Error
+        && error.message.toLowerCase().includes("unique")
+      ) {
+        return Response.json({ error: "This Daily Brief already has an immutable terminal outcome." }, { status: 409 });
+      }
+      if (
+        eventType === "learner_response"
+        && error instanceof Error
+        && error.message.toLowerCase().includes("unique")
+      ) {
+        return Response.json({ error: "This Reading Record already has its immutable learner response." }, { status: 409 });
+      }
+      throw error;
+    }
     return Response.json({ id, occurredAt: now }, { status: 201 });
   }
 

@@ -3,9 +3,11 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("builds the complete Venture Judgment Lab learning surface", async () => {
-  const [layout, app, api, brief, practice, runtime, calibration, founder, sourcing, sourcingView, recruiting, recruitingView, recruitingRecord] = await Promise.all([
+  const [layout, app, assignmentView, assignmentEventView, api, brief, practice, runtime, calibration, founder, sourcing, sourcingView, recruiting, recruitingView, recruitingRecord] = await Promise.all([
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/LabApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/DailyAssignmentView.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/AssignmentEventView.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/lab/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/dailyBrief.ts", import.meta.url), "utf8"),
     readFile(new URL("../records/sustainable-weekly-practice-architecture-2026-08-05.md", import.meta.url), "utf8"),
@@ -91,8 +93,10 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(recruitingRecord, /August 2026–February 2027 sequence/);
   assert.match(recruitingRecord, /Unknown → General eligibility → DSO-confirmed role fit → Employer-compatible → Authorized/);
   assert.match(app, /Compare investment judgments with later evidence/);
-  assert.match(app, /Open resolution source/);
-  assert.match(app, /Open original source/);
+  assert.match(assignmentEventView, /Open appended source/);
+  assert.match(assignmentView, /Open original source/);
+  assert.match(assignmentView, /Commit your Independent First Pass/);
+  assert.match(assignmentView, /Mark today’s Brief complete/);
   assert.doesNotMatch(app, /Forecast reserved · not yet active/);
   assert.match(brief, /https:\/\/www\.bls\.gov\/news\.release\/jolts\.nr0\.htm/);
   assert.match(brief, /https:\/\/www\.sec\.gov\/about\/reports-publications\/beginners-guide-financial-statements/);
@@ -134,7 +138,7 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(monitor, /America\/New_York/);
   assert.match(monitor, /MONITOR_TARGETS/);
   assert.match(monitor, /materialOpportunityChanges/);
-  assert.match(automationRoute, /verifyAutomationBearer/);
+  assert.match(automationRoute, /registeredAutomationOwner/);
   assert.match(automationRoute, /inputFingerprint/);
   assert.match(automationRoute, /db\.batch/);
   assert.doesNotMatch(automationRoute, /UPDATE lab_records|DELETE FROM lab_records/);
@@ -165,7 +169,7 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(coachView, /Reveal the gap, not a grade or answer/);
   assert.match(coachView, /Queued — interpretations withheld/);
   assert.match(coachView, /Original remains immutable/);
-  assert.match(coachRoute, /verifyAutomationBearer/);
+  assert.match(coachRoute, /registeredAutomationOwner/);
   assert.match(coachRoute, /boundedCoachSource/);
   assert.match(coachRoute, /recurringErrorCount/);
   assert.match(coachRoute, /recurringPatterns/);

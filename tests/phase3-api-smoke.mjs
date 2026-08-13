@@ -1,0 +1,279 @@
+import assert from "node:assert/strict";
+
+const baseUrl = process.argv[2] ?? "http://localhost:3000";
+const token = process.env.LAB_AUTOMATION_TOKEN;
+assert.ok(token);
+const suffix = Date.now();
+const ownerHeaders = {
+  "content-type": "application/json",
+  "oai-authenticated-user-id": process.env.LAB_SMOKE_OWNER_ID ?? `phase3-${suffix}`,
+  "oai-authenticated-user-email": `phase3-${suffix}@example.com`,
+};
+const otherHeaders = {
+  "oai-authenticated-user-id": `phase3-other-${suffix}`,
+  "oai-authenticated-user-email": `phase3-other-${suffix}@example.com`,
+};
+
+function parts(value, timezone) {
+  return Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    weekday: "short",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(value).map((part) => [part.type, part.value]));
+}
+
+function canonicalDate(value, timezone) {
+  const valueParts = parts(value, timezone);
+  return `${valueParts.year}-${valueParts.month}-${valueParts.day}`;
+}
+
+function latestWeekdaySevenEastern() {
+  const cursor = new Date(process.env.LAB_API_SMOKE_NOW ?? Date.now());
+  cursor.setUTCMinutes(0, 0, 0);
+  for (let hours = 0; hours < 8 * 24; hours += 1) {
+    const valueParts = parts(cursor, "America/New_York");
+    if (!["Sat", "Sun"].includes(valueParts.weekday) && valueParts.hour === "07") return new Date(cursor);
+    cursor.setTime(cursor.getTime() - 3_600_000);
+  }
+  throw new Error("No recent weekday Daily Operator slot.");
+}
+
+async function json(path, options, expected) {
+  const response = await fetch(`${baseUrl}${path}`, options);
+  const body = await response.json();
+  assert.equal(response.status, expected, JSON.stringify(body));
+  return body;
+}
+
+async function lab(body, expected = 201, headers = ownerHeaders) {
+  return json("/api/lab", { method: "POST", headers, body: JSON.stringify(body) }, expected);
+}
+
+async function automation(path, method, body, expected, submittedToken = token) {
+  return json(path, {
+    method,
+    headers: {
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      ...(submittedToken ? { authorization: `Bearer ${submittedToken}` } : {}),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  }, expected);
+}
+
+const scheduled = latestWeekdaySevenEastern();
+const scheduledFor = scheduled.toISOString();
+const learnerDate = canonicalDate(scheduled, "America/Chicago");
+const futureLearnerDate = canonicalDate(new Date(scheduled.getTime() + 86_400_000), "America/Chicago");
+const scheduledWeekday = parts(scheduled, "America/Chicago").weekday;
+const currentLearnerDate = canonicalDate(new Date(), "America/Chicago");
+
+await automation("/api/automation/daily", "GET", undefined, 401, "wrong-token");
+const currentRegistration = await lab({
+  operation: "register_lab_automation",
+  timezone: "America/Chicago",
+  practiceMode: "Normal Week",
+  effectiveLearnerDate: learnerDate,
+  expectedWeekdays: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+  notificationPreference: "ready_and_intervention",
+}, 200);
+assert.equal(currentRegistration.registered, true);
+const registrationReplay = await lab({
+  operation: "register_lab_automation",
+  timezone: "America/Chicago",
+  practiceMode: "Normal Week",
+  effectiveLearnerDate: learnerDate,
+  expectedWeekdays: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+  notificationPreference: "ready_and_intervention",
+}, 200);
+assert.equal(registrationReplay.profileId, currentRegistration.profileId);
+assert.equal(registrationReplay.idempotent, true);
+const futureRegistration = await lab({
+  operation: "register_lab_automation",
+  timezone: "America/Chicago",
+  practiceMode: "Normal Week",
+  effectiveLearnerDate: futureLearnerDate,
+  expectedWeekdays: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+  notificationPreference: "ready_and_intervention",
+});
+assert.notEqual(futureRegistration.profileId, currentRegistration.profileId);
+await lab({
+  operation: "register_lab_automation",
+  timezone: "America/New_York",
+  practiceMode: "Exam Mode",
+  effectiveLearnerDate: canonicalDate(new Date(scheduled.getTime() - 2 * 86_400_000), "America/Chicago"),
+  expectedWeekdays: ["Fri"],
+  notificationPreference: "ready_and_intervention",
+}, 409);
+
+const lanes = ["Current signal", "Durable investing insight", "Cross-domain input", "Career or freeflow"];
+const readings = lanes.map((lane, index) => ({
+  readingId: `${learnerDate}-phase3-${index}`,
+  lane,
+  title: `Phase 3 source ${index + 1}`,
+  subtitle: "not stated",
+  authorOrOrganization: `Phase 3 author ${index + 1}`,
+  publisher: `Phase 3 publisher ${index + 1}`,
+  sourceType: "Official documentation",
+  sourceRole: index < 2 ? "Evidence owner" : "Interpretation",
+  claimRole: index < 2 ? "primary" : "mixed",
+  issuerInterest: "No material issuer interest identified.",
+  canonicalUrl: `https://example.com/phase3-source-${suffix}-${index}`,
+  persistentIdentifier: "not stated",
+  publishedDate: lane === "Current signal" ? learnerDate : "2024-01-01",
+  sourceUpdatedDate: "not stated",
+  accessedAt: scheduledFor,
+  linkVerifiedAt: scheduledFor,
+  linkResolves: true,
+  estimatedMinutes: 10,
+  assignedSection: "Full article",
+  rightsOrLicense: "Metadata and link only.",
+  accessMode: "open_web",
+  materialReviewed: "full_text",
+  archiveUrl: "not stated",
+  archivedAt: "not stated",
+  sourceStatus: "available",
+  versionStatus: "Current version checked.",
+  sectorContext: `Sector ${index + 1}`,
+  viewpoint: `Viewpoint ${index + 1}`,
+  viewpointRole: index === 3 ? "contrary" : index === 2 ? "orthogonal" : "supporting",
+  underlyingEventOrClaimFingerprint: `phase3-claim-${suffix}-${index}`,
+  corroborationSourceRole: "Evidence owner",
+  corroborationUrl: `https://example.com/phase3-corroboration-${suffix}-${index}`,
+  teachingPurpose: "Develop evidence-weighted judgment from a bounded source.",
+  carryQuestion: "What evidence would change the current view?",
+  downstreamTarget: "Snapshot Judgment",
+  selectionRationale: "This source is more direct than the obvious commentary alternative.",
+  corroborationNotes: "The bounded claim was checked against owner evidence.",
+  labSummary: "Synthetic source metadata for the isolated live API proof.",
+  sourceReview: "The source identity and incentives were checked.",
+  contextReview: "The publication context was checked.",
+  claimReview: "The studied claim is explicitly bounded.",
+  evidenceReview: "The evidence directly supports the bounded claim.",
+  corroborationReview: "Owner or independent corroboration was checked.",
+  freshnessException: "",
+  deduplicationStatus: "new",
+  relatedReadingId: "",
+  copyrightExcerpt: "",
+  independentFirstPassWithheld: true,
+}));
+
+const runInput = {
+  scheduledFor,
+  profileVersion: currentRegistration.profileVersion,
+  notificationIntent: "brief_ready",
+  coachRequestIds: [],
+  coachFeedbackIds: [],
+  sourceStatusEventIds: [],
+  assignment: {
+    state: "ready",
+    learnerDate,
+    timezone: "America/Chicago",
+    brief: {
+      briefVersion: `${learnerDate}-phase3-v1`,
+      carryForward: "Carry the strongest disconfirming evidence into the company screen.",
+      readings,
+    },
+  },
+};
+assert.ok(["Mon", "Tue", "Wed", "Thu", "Fri"].includes(scheduledWeekday));
+await automation("/api/automation/daily", "POST", {
+  ...runInput,
+  profileVersion: futureRegistration.profileVersion,
+}, 409);
+const accepted = await automation("/api/automation/daily", "POST", runInput, 201);
+assert.equal(accepted.state, "ready");
+assert.equal(accepted.archivePreserved, false);
+const replay = await automation("/api/automation/daily", "POST", runInput, 200);
+assert.equal(replay.idempotent, true);
+await automation("/api/automation/daily", "POST", {
+  ...runInput,
+  assignment: { ...runInput.assignment, brief: { ...runInput.assignment.brief, carryForward: "Conflicting evidence." } },
+}, 409);
+
+await automation("/api/automation/daily", "POST", {
+  operation: "append_event",
+  recordId: accepted.readingIds[1],
+  eventType: "source_status",
+  eventData: {
+    status: "moved",
+    evidence: "The assigned publisher URL moved after the immutable assignment.",
+    sourceUrl: "https://example.com/phase3-moved-source",
+    originalPreserved: true,
+  },
+}, 201);
+
+await lab({
+  operation: "append_event",
+  recordId: accepted.assignmentRecordId,
+  eventType: "completion",
+  eventData: {
+    completedLearnerDate: learnerDate,
+    originalPreserved: true,
+  },
+}, 409);
+
+for (let index = 0; index < accepted.readingIds.length; index += 1) await lab({
+  operation: "append_event",
+  recordId: accepted.readingIds[index],
+  eventType: "learner_response",
+  eventData: {
+    independentFirstPass: `Reading ${index + 1}: the observed signal is real, but durability remains an inference.`,
+    takeaway: `Reading ${index + 1}: separate evidence ownership from interpretation.`,
+    uncertainty: `Reading ${index + 1}: the relevant base rate remains unknown.`,
+    originalPreserved: true,
+    privateEvidenceConfirmed: true,
+  },
+});
+const completion = await lab({
+  operation: "append_event",
+  recordId: accepted.assignmentRecordId,
+  eventType: "completion",
+  eventData: {
+    completedLearnerDate: learnerDate,
+    originalPreserved: true,
+  },
+});
+assert.ok(completion.id);
+await lab({
+  operation: "append_event",
+  recordId: accepted.assignmentRecordId,
+  eventType: "completion",
+  eventData: {
+    completedLearnerDate: learnerDate,
+    originalPreserved: true,
+  },
+}, 409);
+
+const exported = await automation(`/api/automation/export?runKey=${encodeURIComponent(accepted.runKey)}`, "GET", undefined, 200);
+assert.equal(exported.payload.cursor.runKey, accepted.runKey);
+assert.equal(exported.payload.counts.assignments, 1);
+const acknowledgement = {
+  runKey: accepted.runKey,
+  cursor: exported.payload.cursor,
+  counts: exported.payload.counts,
+  digest: exported.payloadDigest,
+};
+const preserved = await automation("/api/automation/export", "POST", acknowledgement, 201);
+assert.equal(preserved.idempotent, false);
+const preservedReplay = await automation("/api/automation/export", "POST", acknowledgement, 200);
+assert.equal(preservedReplay.idempotent, true);
+await automation("/api/automation/export", "POST", { ...acknowledgement, digest: "0".repeat(64) }, 409);
+
+const otherToday = await json("/api/lab/assignment/today", { headers: otherHeaders }, 404);
+assert.match(otherToday.error, /No active Lab Profile/);
+const today = await json("/api/lab/assignment/today", { headers: ownerHeaders }, 200);
+if (learnerDate === currentLearnerDate) {
+  assert.equal(today.assignment.id, accepted.assignmentId);
+  assert.equal(today.assignment.brief.readings.length, 4);
+  assert.equal(today.assignment.events.some((event) => event.eventType === "learner_response"), true);
+  assert.equal(today.assignment.events.some((event) => event.eventType === "source_status"), true);
+} else {
+  assert.equal(today.assignment, null);
+}
+
+console.log("Phase 3 API smoke passed: latest-profile enforcement, immutable assignment replay/conflict, four distinct learner responses before terminal completion, deterministic export, archive acknowledgement replay, and owner isolation.");
