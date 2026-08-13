@@ -9,6 +9,8 @@ const [labApp, labWorkspace, teacher, provider, runtime] = await Promise.all([
   readFile(new URL("../app/teacherProvider.ts", import.meta.url), "utf8"),
   readFile(new URL("../db/runtime.ts", import.meta.url), "utf8"),
 ]);
+const historyRoute = await readFile(new URL("../app/api/lab/history/route.ts", import.meta.url), "utf8");
+const commitRoute = await readFile(new URL("../app/api/lab/conversations/[conversationId]/commit/route.ts", import.meta.url), "utf8");
 const labSurface = `${labApp}\n${labWorkspace}`;
 
 test("Today makes conversation primary while every structured workflow remains available", () => {
@@ -52,4 +54,10 @@ test("D1 initializes append-only conversation storage and sequence indexes", () 
   assert.match(runtime, /CREATE TABLE IF NOT EXISTS lab_conversation_turns/);
   assert.match(runtime, /CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_conversation_turns_sequence/);
   assert.match(runtime, /PRAGMA optimize/);
+  assert.match(runtime, /lab_conversation_commits/);
+  assert.match(commitRoute, /reserveConversationCommit/);
+});
+
+test("History only nests canonical Reading Records", () => {
+  assert.match(historyRoute, /record_type = 'reading_record'/);
 });

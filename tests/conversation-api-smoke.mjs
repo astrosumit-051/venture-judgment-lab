@@ -39,7 +39,15 @@ assert.deepEqual(answered.conversation.turns.map((turn) => turn.role), ["teacher
 assert.equal(answered.conversation.turns[1].visibleText, "Trace rising AI infrastructure demand through constrained compute supply and buyer adaptation.");
 assert.equal(answered.conversation.turns[2].draft.missingRequirements.length, 0);
 
-const committed = await json(`/api/lab/conversations/${started.conversation.id}/commit`, { method: "POST", headers }, 201);
+const concurrentCommits = await Promise.all([1, 2].map(async () => {
+  const response = await fetch(`${baseUrl}/api/lab/conversations/${started.conversation.id}/commit`, { method: "POST", headers });
+  return { status: response.status, body: await response.json() };
+}));
+const committedResult = concurrentCommits.find((result) => result.status === 201);
+assert.ok(committedResult, JSON.stringify(concurrentCommits));
+assert.equal(concurrentCommits.filter((result) => result.status === 201).length, 1, JSON.stringify(concurrentCommits));
+assert.ok(concurrentCommits.every((result) => [200, 201, 409].includes(result.status)), JSON.stringify(concurrentCommits));
+const committed = committedResult.body;
 assert.ok(committed.id);
 assert.equal(committed.conversation.phase, "committed");
 assert.equal(committed.conversation.committedRecordId, committed.id);

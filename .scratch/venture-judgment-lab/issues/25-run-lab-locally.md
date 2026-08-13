@@ -23,6 +23,13 @@ initial loading, and no mutation or retirement of the existing private Site.
   empty local record, persisted a verification record across restart, passed
   the complete 63-test and API suites, and completed browser and large-archive
   performance checks. Both disposable verification databases were removed.
+- 2026-08-13: Post-review hardening added a database-backed single-writer Luna
+  confirmation boundary, learner-edit retry recovery, canonical Reading Record
+  nesting, protected loopback flags, `.env.local` development loading, cached
+  cursor-complete reference reads, and record-to-event indexes. The updated
+  build and 65 unit/contract tests pass; the committed concurrent API case is
+  pending the next local-port verification run because the execution service
+  rejected additional elevated usage.
 
 ## Answer
 

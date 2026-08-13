@@ -1,5 +1,5 @@
 import vinext from "vinext";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import { resolve } from "node:path";
 import hostingConfig from "./.openai/hosting.json";
 import { sites } from "./build/sites-vite-plugin";
@@ -8,18 +8,20 @@ const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
 
 const { d1, r2 } = hostingConfig;
+const fileEnv = loadEnv(process.env.NODE_ENV === "production" ? "production" : "development", process.cwd(), "");
+const runtimeEnv = { ...fileEnv, ...process.env };
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
-const apiSmokeToken = process.env.LAB_API_SMOKE === "1" ? process.env.LAB_AUTOMATION_TOKEN : undefined;
-const apiSmokePersistPath = process.env.LAB_API_SMOKE === "1" ? process.env.LAB_TEST_PERSIST_PATH : undefined;
-const apiSmokeNow = process.env.LAB_API_SMOKE === "1" ? process.env.LAB_API_SMOKE_NOW : undefined;
-const localMode = process.env.LAB_LOCAL_MODE === "1";
-const localOwnerId = process.env.LAB_LOCAL_OWNER_ID || "local-learner";
-const localPersistPath = resolve(process.env.LAB_TEST_PERSIST_PATH || process.env.LAB_LOCAL_DATA_PATH || ".private/venture-judgment-lab/local-db");
+const apiSmokeToken = runtimeEnv.LAB_API_SMOKE === "1" ? runtimeEnv.LAB_AUTOMATION_TOKEN : undefined;
+const apiSmokePersistPath = runtimeEnv.LAB_API_SMOKE === "1" ? runtimeEnv.LAB_TEST_PERSIST_PATH : undefined;
+const apiSmokeNow = runtimeEnv.LAB_API_SMOKE === "1" ? runtimeEnv.LAB_API_SMOKE_NOW : undefined;
+const localMode = runtimeEnv.LAB_LOCAL_MODE === "1";
+const localOwnerId = runtimeEnv.LAB_LOCAL_OWNER_ID || "local-learner";
+const localPersistPath = resolve(runtimeEnv.LAB_TEST_PERSIST_PATH || runtimeEnv.LAB_LOCAL_DATA_PATH || ".private/venture-judgment-lab/local-db");
 const localTeacherVars = Object.fromEntries(
   ["LAB_AI_BASE_URL", "LAB_AI_API_KEY", "LAB_AI_MODEL"]
-    .map((key) => [key, process.env[key]])
+    .map((key) => [key, runtimeEnv[key]])
     .filter((entry): entry is [string, string] => typeof entry[1] === "string" && Boolean(entry[1])),
 );
 
@@ -46,7 +48,7 @@ const localBindingConfig = {
   ...(localMode || apiSmokeToken || Object.keys(localTeacherVars).length ? {
     vars: {
       ...(localMode ? { LAB_LOCAL_MODE: "1", LAB_LOCAL_OWNER_ID: localOwnerId } : {}),
-      ...(process.env.LAB_API_SMOKE === "1" ? { LAB_API_SMOKE: "1" } : {}),
+      ...(runtimeEnv.LAB_API_SMOKE === "1" ? { LAB_API_SMOKE: "1" } : {}),
       ...(apiSmokeToken ? { LAB_AUTOMATION_TOKEN: apiSmokeToken } : {}),
       ...(apiSmokeNow ? { LAB_API_SMOKE_NOW: apiSmokeNow } : {}),
       ...localTeacherVars,

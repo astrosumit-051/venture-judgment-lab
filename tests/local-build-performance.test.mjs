@@ -24,4 +24,8 @@ for (const advancedCopy of ["Load-Bearing Questions", "Official Opportunity Moni
   assert.doesNotMatch(eagerCode, new RegExp(advancedCopy), `${advancedCopy} leaked into the eager shell.`);
 }
 
+const localRunner = await readFile(new URL("scripts/start-local.mjs", root), "utf8");
+assert.match(localRunner, /Only --port is supported/);
+assert.doesNotMatch(localRunner, /\.\.\.process\.argv\.slice\(2\)/, "Local arguments must not be able to override loopback-only Wrangler flags.");
+
 console.log(`Local build performance passed: eager Lab shell ${(appBytes / 1024).toFixed(1)} KiB; advanced workspace ${(workspaceBytes / 1024).toFixed(1)} KiB with five view-loaded modules.`);

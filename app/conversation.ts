@@ -49,6 +49,12 @@ export type LearningConversation = {
   committedRecordId: string | null;
 };
 
+export function latestConversationDraft(conversation: LearningConversation): ConversationDraft {
+  return [...conversation.turns].reverse().find((turn) => turn.role !== "system")?.draft ?? {
+    commitBody: {}, missingRequirements: [], contradictions: [],
+  };
+}
+
 export type TeacherReply = {
   message: string;
   draftPatch: Record<string, unknown>;

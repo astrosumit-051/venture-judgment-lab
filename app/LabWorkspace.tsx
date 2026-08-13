@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, lazy, useEffect, useMemo, useState } from "react";
+import { FormEvent, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { calculateBrierScore, dateInTimeZone, type ForecastOutcome } from "./calibration";
 import {
   DailyAssignmentView,
@@ -54,7 +54,7 @@ type LabEvent = {
   createdAt: string;
 };
 
-type LabData = { records: LabRecord[]; events: LabEvent[] };
+type LabData = { records: LabRecord[]; events: LabEvent[]; nextCursor?: string | null };
 
 type AssignmentHistoryItem = {
   id: string;
@@ -534,6 +534,7 @@ export function LabWorkspace({ displayName, initialView = "today" }: { displayNa
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const viewCache = useRef(new Map<string, LabData>());
 
   const [assignment, setAssignment] = useState<TodayAssignment | null>(null);
   const [assignmentDate, setAssignmentDate] = useState(dateInTimeZone(new Date(), DEFAULT_LAB_TIMEZONE));
@@ -574,14 +575,19 @@ export function LabWorkspace({ displayName, initialView = "today" }: { displayNa
     () => data.records.filter((record) => record.recordType === "founder_evidence_review"),
     [data.records],
   );
+  const eventsByRecord = useMemo(() => {
+    const index = new Map<string, LabEvent[]>();
+    for (const event of data.events) index.set(event.recordId, [...(index.get(event.recordId) ?? []), event]);
+    return index;
+  }, [data.events]);
   const sourcingLeads = useMemo(
     () => data.records
       .filter((record) => record.recordType === "sourcing_lead")
       .map((record) => ({
         ...record,
-        payload: applySourcingCorrections(record.payload, data.events.filter((event) => event.recordId === record.id)),
+        payload: applySourcingCorrections(record.payload, eventsByRecord.get(record.id) ?? []),
       })),
-    [data.events, data.records],
+    [data.records, eventsByRecord],
   );
   const sourcingExperiments = useMemo(
     () => data.records.filter((record) => record.recordType === "sourcing_experiment"),
@@ -589,9 +595,9 @@ export function LabWorkspace({ displayName, initialView = "today" }: { displayNa
   );
   const qualifiedSourcingLeads = useMemo(
     () => sourcingLeads.filter((lead) => (
-      sourcingStageIndex(currentSourcingStage(lead, data.events)) >= sourcingStageIndex("qualified")
+      sourcingStageIndex(currentSourcingStage(lead, eventsByRecord.get(lead.id) ?? [])) >= sourcingStageIndex("qualified")
     )),
-    [data.events, sourcingLeads],
+    [eventsByRecord, sourcingLeads],
   );
   const eligibleFounderReviews = useMemo(
     () => founderReviews.filter((record) => record.parentId === underwrite.snapshotId),
@@ -630,13 +636,29 @@ export function LabWorkspace({ displayName, initialView = "today" }: { displayNa
       setLoading(false);
       return;
     }
+    const cacheKey = types.join(",");
+    const cached = viewCache.current.get(cacheKey);
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ types: types.join(","), limit: "200", includeEvents: "1" });
-      const response = await fetch(`/api/lab/records?${params}`, { cache: "no-store" });
-      if (!response.ok) throw new Error("Your private record could not be loaded.");
-      const result = await response.json() as LabData;
-      setData({ records: result.records ?? [], events: result.events ?? [] });
+      const loaded: LabData = { records: [], events: [] };
+      let cursor: string | null = null;
+      do {
+        const params = new URLSearchParams({ types: types.join(","), limit: "200", includeEvents: "1" });
+        if (cursor) params.set("cursor", cursor);
+        const response = await fetch(`/api/lab/records?${params}`, { cache: "no-store" });
+        if (!response.ok) throw new Error("Your private record could not be loaded.");
+        const result = await response.json() as LabData;
+        loaded.records.push(...(result.records ?? []));
+        loaded.events.push(...(result.events ?? []));
+        cursor = result.nextCursor ?? null;
+      } while (cursor);
+      viewCache.current.set(cacheKey, loaded);
+      setData(loaded);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Your private record could not be loaded.");
     } finally {
@@ -711,6 +733,7 @@ export function LabWorkspace({ displayName, initialView = "today" }: { displayNa
       });
       const result = (await response.json()) as { error?: string; record?: LabRecord; event?: LabEvent };
       if (!response.ok) throw new Error(result.error ?? "The record could not be preserved.");
+      viewCache.current.clear();
       if (result.record) {
         setData((current) => ({ ...current, records: [result.record!, ...current.records.filter((record) => record.id !== result.record!.id)] }));
       } else if (result.event) {

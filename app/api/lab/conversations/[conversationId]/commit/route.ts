@@ -1,7 +1,14 @@
 import { POST as commitLabOperation } from "@/app/api/lab/route";
 import { currentLabOwnerId } from "@/app/labOwner";
 import { WORKFLOW_CONTRACTS } from "@/app/conversation";
-import { insertConversationTurn, latestDraft, loadConversation } from "@/app/conversationPersistence";
+import {
+  completeConversationCommit,
+  insertConversationTurn,
+  latestDraft,
+  loadConversation,
+  releaseConversationCommit,
+  reserveConversationCommit,
+} from "@/app/conversationPersistence";
 import { ensureLabSchema } from "@/db/runtime";
 
 export const dynamic = "force-dynamic";
@@ -37,16 +44,38 @@ export async function POST(request: Request, context: { params: Promise<{ conver
   if (!allowedCommit(conversation.workflow, draft.commitBody)) {
     return Response.json({ error: "The conversation draft does not match its declared Lab workflow." }, { status: 400 });
   }
+  const reservation = await reserveConversationCommit(db, conversationId, owner, new Date().toISOString());
+  if (!reservation.acquired && !reservation.artifactId) {
+    return Response.json({ error: "This conversation is already being preserved. Reload to see the immutable result." }, { status: 409 });
+  }
+  if (reservation.artifactId) {
+    const now = new Date().toISOString();
+    await insertConversationTurn(db, {
+      id: crypto.randomUUID(), conversationId, owner,
+      sequence: (conversation.turns.at(-1)?.sequence ?? 0) + 1,
+      role: "system", visibleText: "Confirmed by the learner and preserved as an immutable Lab artifact.",
+      draft, metadata: { kind: "committed", phase: "committed", recordId: reservation.artifactId }, now,
+    }).run();
+    return Response.json({ id: reservation.artifactId, conversation: await loadConversation(db, owner, conversationId), idempotent: true });
+  }
   const delegatedRequest = new Request(request.url.replace(/\/conversations\/[^/]+\/commit$/, ""), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(draft.commitBody),
   });
-  const resultResponse = await commitLabOperation(delegatedRequest);
+  let resultResponse: Response;
+  try {
+    resultResponse = await commitLabOperation(delegatedRequest);
+  } catch (error) {
+    await releaseConversationCommit(db, conversationId, owner).run();
+    throw error;
+  }
   const result = await resultResponse.json() as { id?: string; error?: string };
   if (!resultResponse.ok || !result.id) {
+    await releaseConversationCommit(db, conversationId, owner).run();
     return Response.json({ error: result.error ?? "The confirmed draft did not pass the Lab's evidence rules." }, { status: resultResponse.status });
   }
+  await completeConversationCommit(db, conversationId, owner, result.id, new Date().toISOString()).run();
   conversation = (await loadConversation(db, owner, conversationId))!;
   const now = new Date().toISOString();
   await insertConversationTurn(db, {

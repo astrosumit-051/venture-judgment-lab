@@ -25,6 +25,17 @@ const createConversationTurnsSql = `
   )
 `;
 
+const createConversationCommitsSql = `
+  CREATE TABLE IF NOT EXISTS lab_conversation_commits (
+    conversation_id TEXT PRIMARY KEY NOT NULL,
+    owner_id TEXT NOT NULL,
+    artifact_id TEXT,
+    created_at TEXT NOT NULL,
+    committed_at TEXT,
+    FOREIGN KEY (conversation_id) REFERENCES lab_conversations(id)
+  )
+`;
+
 const createRecordsSql = `
   CREATE TABLE IF NOT EXISTS lab_records (
     id TEXT PRIMARY KEY NOT NULL,
@@ -122,6 +133,7 @@ export async function ensureLabSchema(): Promise<D1Database> {
   const promise = db.batch([
     db.prepare(createConversationsSql),
     db.prepare(createConversationTurnsSql),
+    db.prepare(createConversationCommitsSql),
     db.prepare(createRecordsSql),
     db.prepare(createEventsSql),
     db.prepare(createAutomationCredentialsSql),

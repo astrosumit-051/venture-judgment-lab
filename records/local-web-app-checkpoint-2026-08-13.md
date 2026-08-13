@@ -50,3 +50,20 @@ for incremental client updates.
 - The local store remained empty after browser verification. Both synthetic
   verification stores were removed. No hosted request, data migration,
   deployment, synchronization, or retirement action occurred.
+
+## Post-review hardening — 13 August 2026
+
+The required standards and specification review found and closed three
+immutable-history risks before handoff: concurrent Luna confirmations now use
+a database-backed single-writer reservation, a provider retry resumes from the
+latest learner-edited draft, and History nests only canonical Reading Records.
+Local startup also rejects flags that could override loopback binding,
+development loads server credentials from `.env.local`, and view-scoped reads
+now cache completed reference sets, consume their cursors, and index events by
+record once.
+
+The post-review production build and 65 unit and contract tests passed. The API
+suite had passed immediately before this review; a second local-port run was
+requested for the hardened concurrency path but could not start because the
+execution service rejected additional elevated usage. The new concurrency API
+case remains committed for the next `npm run local:verify` run.

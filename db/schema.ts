@@ -32,6 +32,17 @@ export const labConversationTurns = sqliteTable(
   ],
 );
 
+export const labConversationCommits = sqliteTable(
+  "lab_conversation_commits",
+  {
+    conversationId: text("conversation_id").primaryKey().references(() => labConversations.id),
+    ownerId: text("owner_id").notNull(),
+    artifactId: text("artifact_id"),
+    createdAt: text("created_at").notNull(),
+    committedAt: text("committed_at"),
+  },
+);
+
 export const labAutomationCredentials = sqliteTable(
   "lab_automation_credentials",
   {

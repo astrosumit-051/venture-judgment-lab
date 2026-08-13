@@ -1,5 +1,6 @@
 import {
   conversationPhase,
+  latestConversationDraft,
   type ConversationDraft,
   type ConversationRole,
   type ConversationTurn,
@@ -129,7 +130,30 @@ export function insertConversationTurn(
 }
 
 export function latestDraft(conversation: LearningConversation): ConversationDraft {
-  return [...conversation.turns].reverse().find((turn) => turn.role === "teacher")?.draft ?? {
-    commitBody: {}, missingRequirements: [], contradictions: [],
-  };
+  return latestConversationDraft(conversation);
+}
+
+export async function reserveConversationCommit(db: D1Database, conversationId: string, owner: string, now: string) {
+  const result = await db.prepare(
+    `INSERT OR IGNORE INTO lab_conversation_commits (conversation_id, owner_id, artifact_id, created_at, committed_at)
+     VALUES (?, ?, NULL, ?, NULL)`,
+  ).bind(conversationId, owner, now).run();
+  if ((result.meta?.changes ?? 0) === 1) return { acquired: true, artifactId: null };
+  const existing = await db.prepare(
+    "SELECT artifact_id FROM lab_conversation_commits WHERE conversation_id = ? AND owner_id = ? LIMIT 1",
+  ).bind(conversationId, owner).first<{ artifact_id: string | null }>();
+  return { acquired: false, artifactId: existing?.artifact_id ?? null };
+}
+
+export function completeConversationCommit(db: D1Database, conversationId: string, owner: string, artifactId: string, now: string) {
+  return db.prepare(
+    `UPDATE lab_conversation_commits SET artifact_id = ?, committed_at = ?
+     WHERE conversation_id = ? AND owner_id = ? AND artifact_id IS NULL`,
+  ).bind(artifactId, now, conversationId, owner);
+}
+
+export function releaseConversationCommit(db: D1Database, conversationId: string, owner: string) {
+  return db.prepare(
+    "DELETE FROM lab_conversation_commits WHERE conversation_id = ? AND owner_id = ? AND artifact_id IS NULL",
+  ).bind(conversationId, owner);
 }

@@ -50,8 +50,9 @@ function recordLabel(value: string): string {
 
 function visibleEvidence(payload: Record<string, unknown>): Array<[string, string]> {
   return Object.entries(payload).flatMap(([key, value]) => {
-    if (value === null || value === undefined || value === "" || typeof value === "object") return [];
-    return [[recordLabel(key), String(value)] as [string, string]];
+    if (value === null || value === undefined || value === "") return [];
+    const rendered = typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
+    return [[recordLabel(key), rendered.length > 2_000 ? `${rendered.slice(0, 2_000)}…` : rendered] as [string, string]];
   }).slice(0, 8);
 }
 

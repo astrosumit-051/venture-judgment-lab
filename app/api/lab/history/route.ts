@@ -49,7 +49,7 @@ export async function GET(request: Request) {
   const parentSlots = page.map(() => "?").join(",");
   const childrenResult = await db.prepare(
     `SELECT id, record_type, parent_id, title, payload_json, committed_at, created_at
-     FROM lab_records WHERE owner_id = ? AND parent_id IN (${parentSlots})
+     FROM lab_records WHERE owner_id = ? AND record_type = 'reading_record' AND parent_id IN (${parentSlots})
      ORDER BY committed_at ASC, id ASC`,
   ).bind(owner, ...page.map((record) => record.id)).all<DbLabRecord>();
   const children = childrenResult.results ?? [];
@@ -61,11 +61,20 @@ export async function GET(request: Request) {
      ORDER BY occurred_at ASC, id ASC`,
   ).bind(owner, ...eventRecordIds).all<DbLabEvent>();
   const events = eventsResult.results ?? [];
+  const childrenByParent = new Map<string, DbLabRecord[]>();
+  for (const child of children) childrenByParent.set(child.parent_id!, [...(childrenByParent.get(child.parent_id!) ?? []), child]);
+  const eventsByParent = new Map<string, DbLabEvent[]>();
+  const parentByRecord = new Map(page.map((record) => [record.id, record.id]));
+  for (const child of children) parentByRecord.set(child.id, child.parent_id!);
+  for (const event of events) {
+    const parentId = parentByRecord.get(event.record_id);
+    if (parentId) eventsByParent.set(parentId, [...(eventsByParent.get(parentId) ?? []), event]);
+  }
   return Response.json({
     records: page.map((record) => ({
       ...mapLabRecord(record),
-      childRecords: children.filter((child) => child.parent_id === record.id).map(mapLabRecord),
-      events: events.filter((event) => event.record_id === record.id || children.some((child) => child.parent_id === record.id && child.id === event.record_id)).map(mapLabEvent),
+      childRecords: (childrenByParent.get(record.id) ?? []).map(mapLabRecord),
+      events: (eventsByParent.get(record.id) ?? []).map(mapLabEvent),
     })),
     nextCursor: hasMore ? encodeRecordCursor(page[page.length - 1]) : null,
   });

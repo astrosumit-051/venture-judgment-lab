@@ -26,6 +26,30 @@ npm install
 npm run dev
 ```
 
+`npm run dev` serves the hot-reloading app on `127.0.0.1` with the fixed
+`local-learner` identity. For the fast everyday production build, run:
+
+```bash
+npm run local
+```
+
+Both commands keep D1 state in the git-ignored
+`.private/venture-judgment-lab/local-db` directory. Put Luna and connected-source
+credentials in `.env.local`; they are loaded into the server runtime and are
+never exposed to browser code. The only supported local-server option is a
+port override, for example `npm run local -- --port 3210`; the host remains
+loopback-only.
+
+Run the local release checks with:
+
+```bash
+npm run local:verify
+```
+
+The local database deliberately starts empty and is separate from the private
+hosted Site. `npm run archive:sync` continues to preserve new local work in the
+ignored Private Archive.
+
 Use `npm test` for the production build and learning-surface integrity check.
 With the local preview running, `node tests/api-smoke.mjs` verifies every
 persisted workflow under an isolated verification identity. D1 persistence is

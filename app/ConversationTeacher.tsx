@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  latestConversationDraft,
   WORKFLOW_CONTRACTS,
   type ConversationWorkflow,
   type LearningConversation,
@@ -37,7 +38,7 @@ const WORKFLOW_GROUPS: Array<{ id: string; label: string; description: string; w
 ];
 
 function latestDraft(conversation: LearningConversation | null) {
-  return [...(conversation?.turns ?? [])].reverse().find((turn) => turn.role === "teacher")?.draft ?? null;
+  return conversation ? latestConversationDraft(conversation) : null;
 }
 
 function sentenceCase(value: string): string {

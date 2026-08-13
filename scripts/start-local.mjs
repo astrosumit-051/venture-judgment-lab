@@ -47,6 +47,12 @@ const localEnv = {
   LAB_LOCAL_OWNER_ID: process.env.LAB_LOCAL_OWNER_ID || "local-learner",
 };
 
+function localCliArgs(args) {
+  if (args.length === 0) return [];
+  if (args.length === 2 && ["--port", "-p"].includes(args[0]) && /^\d{2,5}$/.test(args[1])) return ["--port", args[1]];
+  throw new Error("Only --port is supported (for example: npm run local -- --port 3210). Loopback and local persistence cannot be overridden.");
+}
+
 if (!(await buildIsFresh())) await run("npm", ["run", "build"], localEnv);
 
 const wranglerArgs = [
@@ -56,7 +62,7 @@ const wranglerArgs = [
   "--ip", "127.0.0.1",
   "--persist-to", resolve(root, process.env.LAB_LOCAL_DATA_PATH || ".private/venture-judgment-lab/local-db"),
   "--log-level", "warn",
-  ...process.argv.slice(2),
+  ...localCliArgs(process.argv.slice(2)),
 ];
 try {
   await access(resolve(root, ".env.local"), constants.R_OK);

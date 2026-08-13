@@ -7,6 +7,7 @@ import {
   conversationPhase,
   deepMergeDraft,
   emptyConversationDraft,
+  latestConversationDraft,
 } from "../app/conversation.ts";
 
 test("every approved conversational workflow has a bounded commit contract", () => {
@@ -46,4 +47,18 @@ test("conversation state is derived from append-only visible turns", () => {
     { ...base, role: "teacher", metadata: { phase: "review_ready" } },
     { ...base, id: "2", sequence: 2, role: "system", visibleText: "Preserved", metadata: { kind: "committed", recordId: "record-1" } },
   ]), "committed");
+});
+
+test("the latest preserved learner edit remains the retry draft", () => {
+  const teacherDraft = { commitBody: { title: "Old" }, missingRequirements: [], contradictions: [] };
+  const learnerDraft = { commitBody: { title: "Learner correction" }, missingRequirements: [], contradictions: [] };
+  const conversation = {
+    id: "conversation-1", workflow: "snapshot_judgment", title: "Snapshot", phase: "collecting",
+    createdAt: "2026-08-13T00:00:00.000Z", committedRecordId: null,
+    turns: [
+      { id: "t1", sequence: 1, role: "teacher", visibleText: "Review", draft: teacherDraft, metadata: {}, createdAt: "2026-08-13T00:00:00.000Z" },
+      { id: "t2", sequence: 2, role: "learner", visibleText: "Corrected", draft: learnerDraft, metadata: { kind: "structured_edit" }, createdAt: "2026-08-13T00:01:00.000Z" },
+    ],
+  };
+  assert.deepEqual(latestConversationDraft(conversation), learnerDraft);
 });
