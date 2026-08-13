@@ -1,0 +1,3 @@
+# Put an append-only Learning Conversation before the immutable record
+
+The Lab uses a provider-neutral, server-side Conversational Teacher to assemble a Conversation Draft, but keeps the existing typed validation and immutable commit path as the sole authority for Lab evidence. Visible turns are owner-scoped and append-only in D1, cloud credentials never reach the browser, and the cloud provider can be replaced through an OpenAI-compatible boundary; this preserves auditability and the Independent First Pass without coupling the Private Learning Record to one model vendor or letting model output write evidence directly.

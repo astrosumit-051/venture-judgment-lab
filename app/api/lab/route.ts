@@ -1,4 +1,5 @@
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { currentLabOwnerId } from "@/app/labOwner";
+import { mapLabEvent, mapLabRecord, type DbLabEvent, type DbLabRecord } from "@/app/labReadModels";
 import {
   calculateBrierScore,
   dateInTimeZone,
@@ -132,12 +133,6 @@ const allowedEventTypes = new Set([
   "missed_practice",
   ...ASSIGNMENT_EVENT_TYPES,
 ]);
-
-async function ownerId(): Promise<string | null> {
-  const user = await getChatGPTUser();
-  if (user) return user.userId;
-  return process.env.NODE_ENV === "development" ? "local-learner" : null;
-}
 
 function parseJson(value: string): Record<string, unknown> {
   try {
@@ -451,7 +446,7 @@ function insertRecord(
 }
 
 export async function GET() {
-  const owner = await ownerId();
+  const owner = await currentLabOwnerId();
   if (!owner) return Response.json({ error: "Authentication required." }, { status: 401 });
 
   const db = await ensureLabSchema();
@@ -494,7 +489,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const owner = await ownerId();
+  const owner = await currentLabOwnerId();
   if (!owner) return Response.json({ error: "Authentication required." }, { status: 401 });
 
   let body: Record<string, unknown>;
@@ -1618,7 +1613,19 @@ export async function POST(request: Request) {
       }
       throw error;
     }
-    return Response.json({ id, committedAt: now }, { status: 201 });
+    return Response.json({
+      id,
+      committedAt: now,
+      record: mapLabRecord({
+        id,
+        record_type: recordType,
+        parent_id: parentId,
+        title,
+        payload_json: JSON.stringify(payload),
+        committed_at: now,
+        created_at: now,
+      } satisfies DbLabRecord),
+    }, { status: 201 });
   }
 
   if (operation === "append_event") {
@@ -1769,7 +1776,18 @@ export async function POST(request: Request) {
       }
       throw error;
     }
-    return Response.json({ id, occurredAt: now }, { status: 201 });
+    return Response.json({
+      id,
+      occurredAt: now,
+      event: mapLabEvent({
+        id,
+        record_id: recordId,
+        event_type: eventType,
+        event_json: JSON.stringify(eventData),
+        occurred_at: now,
+        created_at: now,
+      } satisfies DbLabEvent),
+    }, { status: 201 });
   }
 
   return Response.json({ error: "Unsupported operation." }, { status: 400 });

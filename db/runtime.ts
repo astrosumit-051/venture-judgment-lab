@@ -1,5 +1,30 @@
 import { env } from "cloudflare:workers";
 
+const createConversationsSql = `
+  CREATE TABLE IF NOT EXISTS lab_conversations (
+    id TEXT PRIMARY KEY NOT NULL,
+    owner_id TEXT NOT NULL,
+    workflow TEXT NOT NULL,
+    title TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )
+`;
+
+const createConversationTurnsSql = `
+  CREATE TABLE IF NOT EXISTS lab_conversation_turns (
+    id TEXT PRIMARY KEY NOT NULL,
+    conversation_id TEXT NOT NULL,
+    owner_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    visible_text TEXT NOT NULL,
+    draft_json TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (conversation_id) REFERENCES lab_conversations(id)
+  )
+`;
+
 const createRecordsSql = `
   CREATE TABLE IF NOT EXISTS lab_records (
     id TEXT PRIMARY KEY NOT NULL,
@@ -82,6 +107,8 @@ const createAssignmentsSql = `
   )
 `;
 
+let schemaInitialization: { db: D1Database; promise: Promise<D1Database> } | null = null;
+
 export function getD1(): D1Database {
   if (!env.DB) {
     throw new Error("The Venture Judgment Lab database is unavailable.");
@@ -91,13 +118,19 @@ export function getD1(): D1Database {
 
 export async function ensureLabSchema(): Promise<D1Database> {
   const db = getD1();
-  await db.batch([
+  if (schemaInitialization?.db === db) return schemaInitialization.promise;
+  const promise = db.batch([
+    db.prepare(createConversationsSql),
+    db.prepare(createConversationTurnsSql),
     db.prepare(createRecordsSql),
     db.prepare(createEventsSql),
     db.prepare(createAutomationCredentialsSql),
     db.prepare(createProfilesSql),
     db.prepare(createAutomationRunsSql),
     db.prepare(createAssignmentsSql),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_lab_conversations_owner_created ON lab_conversations(owner_id, created_at)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_conversation_turns_sequence ON lab_conversation_turns(conversation_id, sequence)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_lab_conversation_turns_owner_created ON lab_conversation_turns(owner_id, created_at)"),
     db.prepare(
       "CREATE INDEX IF NOT EXISTS idx_lab_records_owner_committed ON lab_records(owner_id, committed_at)",
     ),
@@ -185,6 +218,10 @@ export async function ensureLabSchema(): Promise<D1Database> {
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_assignments_owner_run ON lab_assignments(owner_id, automation_run_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_lab_assignments_owner_created ON lab_assignments(owner_id, created_at)"),
     db.prepare("PRAGMA optimize"),
-  ]);
-  return db;
+  ]).then(() => db).catch((error) => {
+    if (schemaInitialization?.db === db) schemaInitialization = null;
+    throw error;
+  });
+  schemaInitialization = { db, promise };
+  return promise;
 }

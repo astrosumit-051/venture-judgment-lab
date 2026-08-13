@@ -1,5 +1,36 @@
 import { sql } from "drizzle-orm";
-import { index, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+
+export const labConversations = sqliteTable(
+  "lab_conversations",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id").notNull(),
+    workflow: text("workflow").notNull(),
+    title: text("title").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("idx_lab_conversations_owner_created").on(table.ownerId, table.createdAt)],
+);
+
+export const labConversationTurns = sqliteTable(
+  "lab_conversation_turns",
+  {
+    id: text("id").primaryKey(),
+    conversationId: text("conversation_id").notNull().references(() => labConversations.id),
+    ownerId: text("owner_id").notNull(),
+    sequence: integer("sequence").notNull(),
+    role: text("role").notNull(),
+    visibleText: text("visible_text").notNull(),
+    draftJson: text("draft_json").notNull(),
+    metadataJson: text("metadata_json").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_lab_conversation_turns_sequence").on(table.conversationId, table.sequence),
+    index("idx_lab_conversation_turns_owner_created").on(table.ownerId, table.createdAt),
+  ],
+);
 
 export const labAutomationCredentials = sqliteTable(
   "lab_automation_credentials",

@@ -1,4 +1,4 @@
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { currentLabOwnerId } from "@/app/labOwner";
 import { dateInTimeZone } from "@/app/calibration";
 import { ensureLabSchema } from "@/db/runtime";
 
@@ -16,14 +16,8 @@ function parseJson(value: string): Record<string, unknown> {
   try { return JSON.parse(value) as Record<string, unknown>; } catch { return {}; }
 }
 
-async function ownerId(): Promise<string | null> {
-  const user = await getChatGPTUser();
-  if (user) return user.userId;
-  return process.env.NODE_ENV === "development" ? "local-learner" : null;
-}
-
 export async function GET() {
-  const owner = await ownerId();
+  const owner = await currentLabOwnerId();
   if (!owner) return Response.json({ error: "Authentication required." }, { status: 401 });
   const db = await ensureLabSchema();
   const profiles = await db.prepare(

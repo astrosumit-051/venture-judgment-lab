@@ -1,0 +1,66 @@
+import assert from "node:assert/strict";
+
+const baseUrl = process.argv[2] ?? "http://localhost:3000";
+const owner = process.env.LAB_SMOKE_OWNER_ID ?? `conversation-owner-${Date.now()}`;
+const headers = {
+  "content-type": "application/json",
+  "oai-authenticated-user-id": owner,
+  "oai-authenticated-user-email": `${owner}@example.com`,
+};
+const otherHeaders = {
+  "content-type": "application/json",
+  "oai-authenticated-user-id": `${owner}-other`,
+  "oai-authenticated-user-email": `${owner}-other@example.com`,
+};
+
+async function json(path, options, expected) {
+  const response = await fetch(`${baseUrl}${path}`, options);
+  const body = await response.json();
+  assert.equal(response.status, expected, JSON.stringify(body));
+  assert.doesNotMatch(JSON.stringify(body), /conversation-smoke-secret-never-returned/);
+  return body;
+}
+
+const started = await json("/api/lab/conversations", {
+  method: "POST", headers, body: JSON.stringify({ workflow: "second_order_map" }),
+}, 201);
+assert.equal(started.conversation.phase, "collecting");
+assert.equal(started.conversation.turns.length, 1);
+assert.equal(started.conversation.turns[0].role, "teacher");
+
+await json(`/api/lab/conversations/${started.conversation.id}`, { headers: otherHeaders }, 404);
+
+const answered = await json(`/api/lab/conversations/${started.conversation.id}/turns`, {
+  method: "POST", headers,
+  body: JSON.stringify({ content: "Trace rising AI infrastructure demand through constrained compute supply and buyer adaptation." }),
+}, 200);
+assert.equal(answered.conversation.phase, "review_ready");
+assert.deepEqual(answered.conversation.turns.map((turn) => turn.role), ["teacher", "learner", "teacher"]);
+assert.equal(answered.conversation.turns[1].visibleText, "Trace rising AI infrastructure demand through constrained compute supply and buyer adaptation.");
+assert.equal(answered.conversation.turns[2].draft.missingRequirements.length, 0);
+
+const committed = await json(`/api/lab/conversations/${started.conversation.id}/commit`, { method: "POST", headers }, 201);
+assert.ok(committed.id);
+assert.equal(committed.conversation.phase, "committed");
+assert.equal(committed.conversation.committedRecordId, committed.id);
+assert.equal(committed.conversation.turns.at(-1).role, "system");
+
+const replay = await json(`/api/lab/conversations/${started.conversation.id}/commit`, { method: "POST", headers }, 200);
+assert.equal(replay.idempotent, true);
+assert.equal(replay.id, committed.id);
+await json(`/api/lab/conversations/${started.conversation.id}/abandon`, { method: "POST", headers }, 409);
+
+const listed = await json("/api/lab/conversations", { headers }, 200);
+const preserved = listed.conversations.find((item) => item.id === started.conversation.id);
+assert.equal(preserved.phase, "committed");
+assert.equal(preserved.turns.length, 4);
+
+const abandonedStart = await json("/api/lab/conversations", {
+  method: "POST", headers, body: JSON.stringify({ workflow: "forecast" }),
+}, 201);
+const abandoned = await json(`/api/lab/conversations/${abandonedStart.conversation.id}/abandon`, { method: "POST", headers }, 200);
+assert.equal(abandoned.conversation.phase, "abandoned");
+assert.equal(abandoned.conversation.turns.at(-1).metadata.kind, "abandoned");
+await json(`/api/lab/conversations/${abandonedStart.conversation.id}/commit`, { method: "POST", headers }, 409);
+
+console.log("Conversation API smoke passed: owner isolation, strict turn sequencing, full transcript retention, real provider adaptation, review-before-commit, idempotent preservation, and append-only abandonment.");

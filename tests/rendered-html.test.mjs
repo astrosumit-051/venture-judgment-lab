@@ -3,9 +3,10 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("builds the complete Venture Judgment Lab learning surface", async () => {
-  const [layout, app, assignmentView, assignmentEventView, api, brief, practice, runtime, calibration, founder, sourcing, sourcingView, recruiting, recruitingView, recruitingRecord] = await Promise.all([
+  const [layout, appShell, appWorkspace, assignmentView, assignmentEventView, api, brief, practice, runtime, calibration, founder, sourcing, sourcingView, recruiting, recruitingView, recruitingRecord] = await Promise.all([
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/LabApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/LabWorkspace.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/DailyAssignmentView.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/AssignmentEventView.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/lab/route.ts", import.meta.url), "utf8"),
@@ -21,6 +22,7 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
     readFile(new URL("../records/seven-month-internship-recruiting-sprint-2026-08-08.md", import.meta.url), "utf8"),
     access(new URL("../dist/server/index.js", import.meta.url)),
   ]);
+  const app = `${appShell}\n${appWorkspace}`;
   const [monitor, automationRoute, monitorRecord, diligence, diligenceView, diligenceRecord, diligenceMigration] = await Promise.all([
     readFile(new URL("../app/opportunityMonitor.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/automation/opportunities/route.ts", import.meta.url), "utf8"),

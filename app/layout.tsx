@@ -7,7 +7,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
-  const description = "A private, evidence-preserving apprenticeship for early-stage technology investing judgment.";
+  const description = "Evidence before narrative. A private conversational apprenticeship for early-stage technology investing judgment—talk it through, review the evidence, then preserve it.";
 
   return {
     metadataBase: new URL(origin),
@@ -17,13 +17,13 @@ export async function generateMetadata(): Promise<Metadata> {
       title: "Venture Judgment Lab",
       description,
       type: "website",
-      images: [{ url: `${origin}/og.png`, width: 1200, height: 630, alt: "Venture Judgment Lab — Evidence before narrative." }],
+      images: [{ url: `${origin}/og-conversational-teacher.png`, width: 1200, height: 630, alt: "Venture Judgment Lab — Talk it through. Preserve the judgment." }],
     },
     twitter: {
       card: "summary_large_image",
       title: "Venture Judgment Lab",
       description,
-      images: [`${origin}/og.png`],
+      images: [`${origin}/og-conversational-teacher.png`],
     },
   };
 }

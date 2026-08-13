@@ -240,6 +240,18 @@ _Avoid_: Permanent identity, exclusive mandate, fashionable thesis
 The Lab's strict but diagnostic teaching role, which challenges unsupported claims, adapts practice to recurring weaknesses, compares current work with prior evidence, and requires revision when a gap is foundational.
 _Avoid_: Cheerleader, answer generator, school-style grader
 
+**Conversational Teacher**:
+The Lab's pre-commit teaching role that asks one neutral question at a time, clarifies the learner's own reasoning, and assembles a reviewable draft without supplying the investment answer. It may expose missing evidence or contradictions, but only the learner can confirm the resulting immutable record.
+_Avoid_: Form chatbot, answer generator, autonomous analyst
+
+**Learning Conversation**:
+An owner-scoped, append-only sequence of visible Conversational Teacher and learner turns that produces at most one confirmed Lab record or event. Its full visible transcript is private evidence; hidden model reasoning and provider credentials are never part of it.
+_Avoid_: Prompt log, disposable form session, chain of thought
+
+**Conversation Draft**:
+The latest structured interpretation of a Learning Conversation, held for learner review and correction before confirmation. It is not a committed judgment, recruiting outcome, or other Lab artifact.
+_Avoid_: Saved record, model answer, automatic submission
+
 **Coach Request**:
 A dated request for diagnosis of one specific dimension of committed original work, preserving the learner's focus question and self-diagnosis while competing interpretations and benchmarks remain withheld.
 _Avoid_: Ask for an answer, pre-commitment hint, open-ended chat

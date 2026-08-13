@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const labApp = await readFile(new URL("../app/LabApp.tsx", import.meta.url), "utf8");
+const labWorkspace = await readFile(new URL("../app/LabWorkspace.tsx", import.meta.url), "utf8");
+const labSurface = `${labApp}\n${labWorkspace}`;
 const assignmentView = await readFile(new URL("../app/DailyAssignmentView.tsx", import.meta.url), "utf8");
 const assignmentEventView = await readFile(new URL("../app/AssignmentEventView.tsx", import.meta.url), "utf8");
 
@@ -44,8 +46,8 @@ test("completion requires one learner response overlay for each of four current 
 });
 
 test("History exposes the owner-scoped Daily Assignment and archive ledger", () => {
-  assert.match(labApp, /Daily delivery ledger/);
-  assert.match(labApp, /assignmentHistory\.map/);
-  assert.match(labApp, /Archive preserved/);
-  assert.match(labApp, /Archive pending/);
+  assert.match(labSurface, /Daily delivery ledger/);
+  assert.match(labSurface, /assignmentHistory\.map/);
+  assert.match(labSurface, /Archive preserved/);
+  assert.match(labSurface, /Archive pending/);
 });

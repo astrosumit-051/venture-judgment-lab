@@ -30,6 +30,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -42,4 +43,5 @@ next-env.d.ts
 /work/
 /tmp/
 /.private/venture-judgment-lab/archive/
+/.private/venture-judgment-lab/local-db/
 *.tsbuildinfo
