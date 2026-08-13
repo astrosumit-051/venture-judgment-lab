@@ -124,6 +124,26 @@ _Avoid_: News dump, popular-link roundup
 The immutable assignment metadata and dated append-only events for every Daily Brief selection, including source identity and status, teaching purpose, learner response, corrections, replacements, linked artifacts, and later usefulness. Sites presents the archive while the Private Learning Record preserves its canonical history without rewriting the original record.
 _Avoid_: Bookmarks, mutable recommendations list
 
+**Lab Profile**:
+An immutable version of one owner's timezone, practice mode, expected delivery dates, notification preference, and automation binding; a later configuration becomes a new effective version rather than rewriting the old one.
+_Avoid_: Browser preferences, mutable global settings
+
+**Lab Assignment**:
+The one immutable Daily Brief delivery outcome for an owner and learner date: a validated Brief, an explicit unavailable result, or an intentional practice-mode displacement. Corrections and replacements append later without creating a second live assignment for that date.
+_Avoid_: Static seed, mutable daily content
+
+**Lab Automation Run**:
+The immutable, idempotent evidence for one scheduled private operator slot, including its input checksum, assignment result, bounded supporting actions, export outcome, and notification reason.
+_Avoid_: Cron log, prompt transcript
+
+**Brief Unavailable**:
+The explicit assignment outcome used when a complete valid Daily Brief cannot be accepted; it preserves a bounded failure and never repeats an older Brief as if it were current.
+_Avoid_: Empty success, stale fallback
+
+**Private Archive Export**:
+A deterministic owner-scoped projection of the D1 learning record with stable cursors, counts, and checksums, preserved in the ignored append-only local Private Archive for audit and recovery.
+_Avoid_: Public backup, second writable database
+
 **Sourcing Experiment**:
 A bounded, falsifiable test of one company-discovery hypothesis, committing the target, search surface, leading signal, channel, success condition, and stop-or-change rule before its funnel is known.
 _Avoid_: Browsing session, company list, trend hunt
