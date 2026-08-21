@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AssignmentEventView } from "./AssignmentEventView";
+import { ConversationHistory } from "./ConversationHistory";
 
 type RecordModel = {
   id: string;
@@ -72,7 +73,8 @@ export function HistoryView() {
   const selected = useMemo(() => records.find((record) => record.id === selectedId), [records, selectedId]);
 
   async function loadPage(cursor: string | null, append: boolean) {
-    append ? setLoadingMore(true) : setLoading(true);
+    if (append) setLoadingMore(true);
+    else setLoading(true);
     setError("");
     try {
       const params = new URLSearchParams({ limit: "25" });
@@ -91,7 +93,11 @@ export function HistoryView() {
     }
   }
 
-  useEffect(() => { void loadPage(null, false); }, [filter]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadPage(null, false), 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- filter is the public query boundary.
+  }, [filter]);
 
   async function appendUpdate(event: FormEvent) {
     event.preventDefault();
@@ -128,6 +134,7 @@ export function HistoryView() {
 
   return (
     <>
+      <ConversationHistory />
       <div className="history-tools"><label>Show<select value={filter} onChange={(event) => { setFilter(event.target.value); setSelectedId(""); }}>{filters.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><span>{records.length}{nextCursor ? "+" : ""} immutable submission{records.length === 1 && !nextCursor ? "" : "s"}</span></div>
       {error && <div className="notice" role="alert">{error}</div>}
       <div className="history-layout">

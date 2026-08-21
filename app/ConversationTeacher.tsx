@@ -55,49 +55,6 @@ function DraftSummary({ value, depth = 0 }: { value: unknown; depth?: number }) 
   return <span>{String(value)}</span>;
 }
 
-export function TeacherLauncher({
-  activeConversation,
-  onOpen,
-}: {
-  activeConversation?: LearningConversation;
-  onOpen: (workflow?: ConversationWorkflow) => void;
-}) {
-  const [discoveredActive, setDiscoveredActive] = useState<LearningConversation | undefined>(activeConversation);
-  useEffect(() => {
-    if (activeConversation) { setDiscoveredActive(activeConversation); return; }
-    void fetch("/api/lab/conversations", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((result: ApiResult) => setDiscoveredActive((result.conversations ?? []).find((item) => item.phase === "collecting" || item.phase === "review_ready")))
-      .catch(() => undefined);
-  }, [activeConversation]);
-  const current = activeConversation ?? discoveredActive;
-  return <section className="teacher-launcher" aria-label="Conversational Teacher">
-    <div><span className="eyebrow coral">Talk to Coach</span><h2>Talk it through. I’ll organize the evidence.</h2><p>Start with rough thoughts. I’ll ask one useful question at a time and turn your answers into a draft you can review.</p></div>
-    <div className="teacher-launcher-actions">
-      <button className="primary" onClick={() => onOpen(current?.workflow)}>{current ? "Continue conversation" : "Start today’s work"} <span>→</span></button>
-      <small>Private transcript · full visible conversation preserved</small>
-    </div>
-  </section>;
-}
-
-export function TeacherEntryStrip({
-  workflow,
-  advancedVisible,
-  onOpen,
-  onToggleAdvanced,
-}: {
-  workflow: ConversationWorkflow;
-  advancedVisible: boolean;
-  onOpen: () => void;
-  onToggleAdvanced: () => void;
-}) {
-  const contract = WORKFLOW_CONTRACTS[workflow];
-  return <div className="teacher-entry-strip">
-    <div><span className="eyebrow coral">Conversation first</span><strong>Talk through {contract.label.toLowerCase()}</strong><p>{contract.description}</p></div>
-    <div><button className="primary" onClick={onOpen}>Talk to Teacher</button><button className="text-button" onClick={onToggleAdvanced}>{advancedVisible ? "Hide advanced entry" : "Edit structured draft"}</button></div>
-  </div>;
-}
-
 export function ConversationTeacher({
   initialWorkflow = "snapshot_judgment",
   onCommitted,
@@ -129,15 +86,17 @@ export function ConversationTeacher({
   }
 
   useEffect(() => {
-    setWorkflow(initialWorkflow);
-  }, [initialWorkflow]);
-
-  useEffect(() => {
-    void load().catch((cause) => setError(cause instanceof Error ? cause.message : "Your private conversations could not be loaded."));
+    const timer = window.setTimeout(() => {
+      void load().catch((cause) => setError(cause instanceof Error ? cause.message : "Your private conversations could not be loaded."));
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once when the Teacher surface opens.
   }, []);
 
   useEffect(() => {
-    if (draft) setStructuredDraft(JSON.stringify(draft.commitBody, null, 2));
+    if (!draft) return;
+    const timer = window.setTimeout(() => setStructuredDraft(JSON.stringify(draft.commitBody, null, 2)), 0);
+    return () => window.clearTimeout(timer);
   }, [draft]);
 
   async function start() {
@@ -242,12 +201,4 @@ export function ConversationTeacher({
       {conversation.phase === "review_ready" && !draft.missingRequirements.length && !draft.contradictions.length && <div className="confirm-preserve"><div><strong>This becomes immutable.</strong><p>The full visible transcript stays linked to the resulting Lab artifact. Later evidence appends; it never rewrites this record.</p></div><button className="primary" disabled={busy} onClick={() => void commit()}>{busy ? "Preserving…" : "Confirm and preserve"}</button></div>}
     </section>}
   </section>;
-}
-
-export function ConversationHistory() {
-  const [conversations, setConversations] = useState<LearningConversation[]>([]);
-  useEffect(() => { void fetch("/api/lab/conversations", { cache: "no-store" }).then((response) => response.json()).then((result: ApiResult) => setConversations(result.conversations ?? [])); }, []);
-  const committed = conversations.filter((item) => item.phase === "committed");
-  if (!committed.length) return null;
-  return <section className="conversation-history"><div className="section-heading"><div><span className="eyebrow coral">Learning Conversations</span><h3>Full visible transcripts</h3></div><span className="quiet">Hidden model reasoning is never stored</span></div>{committed.map((item) => <details key={item.id}><summary><span><strong>{WORKFLOW_CONTRACTS[item.workflow].label}</strong><small>{new Date(item.createdAt).toLocaleString()} · linked artifact {item.committedRecordId}</small></span><span>{item.turns.filter((turn) => turn.role !== "system").length} turns</span></summary><div className="transcript">{item.turns.map((turn) => <article key={turn.id} className={`turn turn-${turn.role}`}><span>{turn.role === "teacher" ? "Teacher" : turn.role === "learner" ? "You" : "Preserved"}</span><p>{turn.visibleText}</p></article>)}</div></details>)}</section>;
 }

@@ -2,22 +2,24 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [labApp, labWorkspace, teacher, provider, runtime] = await Promise.all([
+const [labApp, labWorkspace, advancedForms, teacher, conversationHistory, provider, runtime] = await Promise.all([
   readFile(new URL("../app/LabApp.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/LabWorkspace.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../app/AdvancedFormsView.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/ConversationTeacher.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../app/ConversationHistory.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/teacherProvider.ts", import.meta.url), "utf8"),
   readFile(new URL("../db/runtime.ts", import.meta.url), "utf8"),
 ]);
 const historyRoute = await readFile(new URL("../app/api/lab/history/route.ts", import.meta.url), "utf8");
 const commitRoute = await readFile(new URL("../app/api/lab/conversations/[conversationId]/commit/route.ts", import.meta.url), "utf8");
-const labSurface = `${labApp}\n${labWorkspace}`;
+const labSurface = `${labApp}\n${labWorkspace}\n${advancedForms}`;
 
 test("Today makes conversation primary while every structured workflow remains available", () => {
   assert.match(labSurface, /teacher-launcher|<TeacherLauncher/);
   assert.match(labSurface, /label: "Teacher"/);
   assert.match(labSurface, /label: "Sourcing"/);
-  assert.match(labSurface, /TeacherEntryStrip/);
+  assert.match(labSurface, /TeacherEntrySurface/);
   assert.match(labSurface, /advancedEntryVisible/);
 });
 
@@ -35,8 +37,8 @@ test("the learner sees one-question conversation, structured review, and explici
   assert.match(teacher, /that isn’t what I meant/);
   assert.match(teacher, /Nothing below is permanent yet/);
   assert.match(teacher, /!\["operation", "recordType"\]\.includes/);
-  assert.match(teacher, /Full visible transcripts/);
-  assert.match(teacher, /Hidden model reasoning is never stored/);
+  assert.match(conversationHistory, /Full visible transcripts/);
+  assert.match(conversationHistory, /Hidden model reasoning is never stored/);
 });
 
 test("the provider boundary is server-only, bounded, and prohibits pre-commit answers", () => {

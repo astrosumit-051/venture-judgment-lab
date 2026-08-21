@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 async function availablePort() {
   if (process.env.LAB_API_SMOKE_PORT) return process.env.LAB_API_SMOKE_PORT;
@@ -56,6 +57,11 @@ const aiServer = createHttpServer((request, response) => {
   request.setEncoding("utf8");
   request.on("data", (chunk) => { submitted += chunk; });
   request.on("end", () => {
+    if (submitted.includes("FORCE_PROVIDER_FAILURE")) {
+      response.writeHead(503, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: "Synthetic provider outage" }));
+      return;
+    }
     const input = JSON.parse(submitted);
     assert.equal(input.model, "conversation-smoke-model");
     response.writeHead(200, { "content-type": "application/json" });
@@ -86,18 +92,23 @@ const aiServer = createHttpServer((request, response) => {
   });
 });
 await new Promise((resolve, reject) => aiServer.listen(aiPort, "127.0.0.1", (error) => error ? reject(error) : resolve()));
-const server = spawn("npm", ["run", "dev", "--", "--port", port], {
-  cwd: new URL("..", import.meta.url),
-  env: runEnv,
-  stdio: ["ignore", "pipe", "pipe"],
-});
-
 let serverOutput = "";
-for (const stream of [server.stdout, server.stderr]) {
-  stream.setEncoding("utf8");
-  stream.on("data", (chunk) => {
-    serverOutput = `${serverOutput}${chunk}`.slice(-12_000);
+function startLabServer() {
+  const child = spawn("npm", ["run", "dev", "--", "--port", port], {
+    cwd: new URL("..", import.meta.url), env: runEnv, stdio: ["ignore", "pipe", "pipe"],
   });
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.setEncoding("utf8");
+    stream.on("data", (chunk) => { serverOutput = `${serverOutput}${chunk}`.slice(-12_000); });
+  }
+  return child;
+}
+let server = startLabServer();
+
+async function stopLabServer() {
+  server.kill("SIGTERM");
+  await Promise.race([new Promise((resolve) => server.once("exit", resolve)), new Promise((resolve) => setTimeout(resolve, 3_000))]);
+  if (server.exitCode === null) server.kill("SIGKILL");
 }
 
 async function waitForServer() {
@@ -146,19 +157,80 @@ function runLocalSmoke() {
   });
 }
 
+async function findD1File(path) {
+  for (const entry of await readdir(path, { withFileTypes: true })) {
+    const candidate = join(path, entry.name);
+    if (entry.isDirectory()) {
+      const nested = await findD1File(candidate);
+      if (nested) return nested;
+    } else if (entry.name.endsWith(".sqlite")) {
+      const candidateDb = new DatabaseSync(candidate);
+      const found = candidateDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='lab_records'").get();
+      candidateDb.close();
+      if (found) return candidate;
+    }
+  }
+  return null;
+}
+
+function seedLargeArchive(databasePath) {
+  const database = new DatabaseSync(databasePath);
+  const insertRecord = database.prepare("INSERT INTO lab_records (id, owner_id, record_type, parent_id, title, payload_json, committed_at, created_at) VALUES (?, 'local-learner', 'weekly_plan', NULL, ?, ?, ?, ?)");
+  const insertEvent = database.prepare("INSERT INTO lab_events (id, owner_id, record_id, event_type, event_json, occurred_at, created_at) VALUES (?, 'local-learner', ?, 'reflection', ?, ?, ?)");
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    for (let index = 0; index < 10_000; index += 1) {
+      const recordId = `synthetic-record-${String(index).padStart(5, "0")}`;
+      const timestamp = new Date(Date.UTC(2026, 7, 20, 12, 0, 0) - index * 1_000).toISOString();
+      insertRecord.run(recordId, `Synthetic plan ${index}`, JSON.stringify({ weekOf: "2026-08-17", mode: "Normal Week", rationale: `Synthetic performance record ${index}`, totalMinutes: 690, dailyLoops: 5 }), timestamp, timestamp);
+      for (let eventIndex = 0; eventIndex < 3; eventIndex += 1) {
+        insertEvent.run(`synthetic-event-${index}-${eventIndex}`, recordId, JSON.stringify({ text: `Synthetic event ${eventIndex}` }), timestamp, timestamp);
+      }
+    }
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  } finally { database.close(); }
+}
+
 try {
   await waitForServer();
   await runSmoke();
   await runPhase3Smoke();
   await runConversationSmoke();
   await runLocalSmoke();
+  await stopLabServer();
+
+  serverOutput = "";
+  server = startLabServer();
+  await waitForServer();
+  const persisted = await fetch(`${baseUrl}/api/lab/bootstrap`).then((response) => response.json());
+  assert.deepEqual(persisted.counts, { records: 1, events: 1, conversations: 0 }, "Local records must survive a server restart.");
+  await stopLabServer();
+
+  const databasePath = await findD1File(persistencePath);
+  assert.ok(databasePath, "The disposable local D1 file must be discoverable for the large-archive gate.");
+  seedLargeArchive(databasePath);
+  serverOutput = "";
+  server = startLabServer();
+  await waitForServer();
+  await fetch(`${baseUrl}/api/lab/history?type=weekly_plan&limit=25`);
+  const durations = [];
+  let cursor = null;
+  for (let page = 0; page < 5; page += 1) {
+    const startedAt = performance.now();
+    const response = await fetch(`${baseUrl}/api/lab/history?type=weekly_plan&limit=25${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+    const body = await response.json();
+    durations.push(performance.now() - startedAt);
+    assert.equal(response.status, 200, JSON.stringify(body));
+    assert.equal(body.records.length, 25);
+    cursor = body.nextCursor;
+  }
+  assert.ok(durations.every((duration) => duration < 300), `Large History pages exceeded 300ms: ${durations.map((value) => value.toFixed(1)).join(", ")}`);
+  console.log(`Local persistence and large-archive smoke passed: restart retained data; 10,000 records and 30,000 events served in ${durations.map((value) => value.toFixed(1)).join("/" )}ms.`);
 } finally {
-  server.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolve) => server.once("exit", resolve)),
-    new Promise((resolve) => setTimeout(resolve, 3_000)),
-  ]);
-  if (server.exitCode === null) server.kill("SIGKILL");
+  if (server.exitCode === null) await stopLabServer();
   await new Promise((resolve) => aiServer.close(resolve));
   await rm(persistencePath, { recursive: true, force: true });
 }

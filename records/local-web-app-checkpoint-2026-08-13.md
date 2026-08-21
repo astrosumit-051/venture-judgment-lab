@@ -67,3 +67,28 @@ suite had passed immediately before this review; a second local-port run was
 requested for the hardened concurrency path but could not start because the
 execution service rejected additional elevated usage. The new concurrency API
 case remains committed for the next `npm run local:verify` run.
+
+## Release-gate completion — 21 August 2026
+
+The outstanding verification is now part of the committed release command.
+`npm run local:verify` runs lint, the production build and immutable contracts,
+the restart and API suites, and a real Chromium session against disposable
+state. The browser run opens every learner workspace, verifies keyboard focus
+and sub-100-millisecond navigation feedback, renders a recoverable Luna outage
+without losing the learner turn, confirms Teacher and advanced code remain
+deferred, and paginates a 10,000-record / 30,000-event History archive.
+
+The shell split now preserves Brief event writes, and non-Teacher workspaces
+load a small conversation entry surface without fetching the full Teacher.
+Advanced judgment forms no longer request Today’s assignment until Brief or
+Today is actually opened. Every verification database and browser profile is
+disposable and removed after the run; the private hosted Site remains outside
+the command and was not accessed, synchronized, redeployed, retired, or
+deleted.
+
+The final command passed all 65 unit and contract tests. The eager Today shell
+was 5.5 KiB and the navigation workspace 12.5 KiB with eight view-loaded
+modules. Five warmed large-archive API pages completed in 9.3–10.9
+milliseconds; the browser became usable in 107.7 milliseconds, showed
+navigation feedback in 1.7 milliseconds, and rendered its second 25-record
+History page in 32.4 milliseconds.

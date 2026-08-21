@@ -85,7 +85,10 @@ export function LabApp({ displayName }: { displayName: string }) {
     }
   }
 
-  useEffect(() => { void loadToday(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadToday(), 0);
+    return () => window.clearTimeout(timer);
+  }, []); // loadToday intentionally runs once for the eager shell.
 
   if (advancedView) {
     return (

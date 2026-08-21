@@ -71,4 +71,16 @@ assert.equal(abandoned.conversation.phase, "abandoned");
 assert.equal(abandoned.conversation.turns.at(-1).metadata.kind, "abandoned");
 await json(`/api/lab/conversations/${abandonedStart.conversation.id}/commit`, { method: "POST", headers }, 409);
 
-console.log("Conversation API smoke passed: owner isolation, strict turn sequencing, full transcript retention, real provider adaptation, review-before-commit, idempotent preservation, and append-only abandonment.");
+const failureStart = await json("/api/lab/conversations", {
+  method: "POST", headers, body: JSON.stringify({ workflow: "snapshot_judgment" }),
+}, 201);
+const learnerEditedDraft = { operation: "commit_record", recordType: "snapshot_judgment", title: "Learner draft survives outage", payload: { company: "Local Reliability" } };
+const failedTurn = await json(`/api/lab/conversations/${failureStart.conversation.id}/turns`, {
+  method: "POST", headers,
+  body: JSON.stringify({ content: "FORCE_PROVIDER_FAILURE preserve this learner edit", draftOverride: learnerEditedDraft }),
+}, 503);
+assert.equal(failedTurn.preserved, true);
+assert.equal(failedTurn.conversation.turns.at(-1).role, "learner");
+assert.deepEqual(failedTurn.conversation.turns.at(-1).draft.commitBody, learnerEditedDraft);
+
+console.log("Conversation API smoke passed: owner isolation, strict turn sequencing, full transcript retention, real provider adaptation, review-before-commit, idempotent preservation, append-only abandonment, and learner-draft recovery during provider failure.");

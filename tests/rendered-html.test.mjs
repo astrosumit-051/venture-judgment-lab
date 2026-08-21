@@ -3,10 +3,12 @@ import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("builds the complete Venture Judgment Lab learning surface", async () => {
-  const [layout, appShell, appWorkspace, assignmentView, assignmentEventView, api, brief, practice, runtime, calibration, founder, sourcing, sourcingView, recruiting, recruitingView, recruitingRecord] = await Promise.all([
+  const [layout, appShell, appWorkspace, advancedForms, historyView, assignmentView, assignmentEventView, api, brief, practice, runtime, calibration, founder, sourcing, sourcingView, recruiting, recruitingView, recruitingRecord] = await Promise.all([
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/LabApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/LabWorkspace.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/AdvancedFormsView.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/HistoryView.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/DailyAssignmentView.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/AssignmentEventView.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/lab/route.ts", import.meta.url), "utf8"),
@@ -22,7 +24,7 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
     readFile(new URL("../records/seven-month-internship-recruiting-sprint-2026-08-08.md", import.meta.url), "utf8"),
     access(new URL("../dist/server/index.js", import.meta.url)),
   ]);
-  const app = `${appShell}\n${appWorkspace}`;
+  const app = `${appShell}\n${appWorkspace}\n${advancedForms}\n${historyView}`;
   const [monitor, automationRoute, monitorRecord, diligence, diligenceView, diligenceRecord, diligenceMigration] = await Promise.all([
     readFile(new URL("../app/opportunityMonitor.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/automation/opportunities/route.ts", import.meta.url), "utf8"),
@@ -56,7 +58,7 @@ test("builds the complete Venture Judgment Lab learning surface", async () => {
   assert.match(app, /SourcingView/);
   assert.match(app, /Observable behavior, not founder vibes/);
   assert.match(app, /only consented behavioral evidence/);
-  assert.match(app, /Confirm that this update contains only bounded, approved evidence and preserves the original record/);
+  assert.match(app, /Append, never overwrite/);
   assert.match(app, /sourceDate: dateInTimeZone/);
   assert.match(founder, /Insight/);
   assert.match(founder, /Integrity/);

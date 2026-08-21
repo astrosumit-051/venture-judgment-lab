@@ -46,6 +46,11 @@ Run the local release checks with:
 npm run local:verify
 ```
 
+This uses an isolated disposable database and browser profile, and requires
+Google Chrome, Chromium, or `CHROME_BIN`. It verifies restart persistence,
+provider-failure draft recovery, every workspace, keyboard focus, lazy loading,
+and History pagination against a 10,000-record / 30,000-event archive.
+
 The local database deliberately starts empty and is separate from the private
 hosted Site. `npm run archive:sync` continues to preserve new local work in the
 ignored Private Archive.

@@ -12,6 +12,7 @@ test("Today and Brief read the authenticated daily assignment without a static B
   assert.doesNotMatch(labApp, /import\s+\{\s*dailyBrief\s*\}/);
   assert.match(labApp, /fetch\("\/api\/lab\/assignment\/today"/);
   assert.match(labApp, /<DailyAssignmentView/);
+  assert.match(labWorkspace, /onAppendEvent=\{appendAssignmentEvent\}/);
 });
 
 test("the assignment view names every learner-visible lifecycle state", () => {
