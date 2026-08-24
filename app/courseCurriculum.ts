@@ -66,6 +66,7 @@ export type PracticeDayInput = {
   rotationWeek: number;
   phase: "breadth" | "confirmation";
   sector: string;
+  confirmationSelectionKey?: string;
   rotationTitle: string;
   teachingPurpose: string;
   whyToday: string[];
@@ -78,9 +79,24 @@ export type PracticeDayInput = {
   totalMinutes: 105;
 };
 
+export type ConfirmationSelectionInput = {
+  contractVersion: typeof COURSE_FIRST_CONTRACT_VERSION;
+  selectionKey: string;
+  selectedLearnerDate: string;
+  finalists: Array<{
+    sector: string;
+    curiosityEvidence: string;
+    accessEvidence: string;
+    analyticalAdvantageEvidence: string;
+    originalInsightEvidence: string;
+    independentDealFlowEvidence: string;
+  }>;
+};
+
 export type CourseFirstCurriculumInput = {
   epoch: CurriculumEpochInput;
   practiceDay: PracticeDayInput;
+  confirmationSelection?: ConfirmationSelectionInput;
 };
 
 function object(value: unknown): value is JsonObject {
@@ -150,7 +166,7 @@ export function validatePracticeDay(value: unknown, epoch: unknown): string | nu
   }
   const keys = [
     "contractVersion", "practiceDayKey", "learnerDate", "curriculumDay", "rotationWeek",
-    "phase", "sector", "rotationTitle", "teachingPurpose", "whyToday", "sourcingPrompt",
+    "phase", "sector", "confirmationSelectionKey", "rotationTitle", "teachingPurpose", "whyToday", "sourcingPrompt",
     "checkpoints", "totalMinutes",
   ];
   if (!onlyKeys(value, keys)) return "The Practice Day contains an undeclared field.";
@@ -168,6 +184,10 @@ export function validatePracticeDay(value: unknown, epoch: unknown): string | nu
   if (!Number.isInteger(value.rotationWeek) || Number(value.rotationWeek) < 1 || Number(value.rotationWeek) > 12) {
     return "The first Sector Discovery Cycle contains twelve completed rotation weeks.";
   }
+  if (Number(value.rotationWeek) !== Math.ceil(Number(value.curriculumDay) / 5)
+    || Number(value.curriculumDay) > 60) {
+    return "Curriculum days must advance in five ordered Practice Days per rotation week.";
+  }
   if (!new Set(["breadth", "confirmation"]).has(String(value.phase))) return "Choose breadth or confirmation as the Practice Day phase.";
   if (!(COURSE_FIRST_BREADTH_ROTATIONS as readonly string[]).includes(String(value.sector))) {
     return "The Practice Day sector must belong to the accepted technology rotation set.";
@@ -177,8 +197,13 @@ export function validatePracticeDay(value: unknown, epoch: unknown): string | nu
       || value.sector !== COURSE_FIRST_BREADTH_ROTATIONS[Number(value.rotationWeek) - 1]) {
       return "Breadth Practice Days must follow the six accepted rotations in order.";
     }
+    if (value.confirmationSelectionKey !== undefined) {
+      return "Breadth Practice Days cannot preselect confirmation finalists.";
+    }
   } else if (Number(value.rotationWeek) <= COURSE_FIRST_BREADTH_ROTATIONS.length) {
     return "Confirmation sprints begin only after all six breadth rotations are complete.";
+  } else if (!boundedText(value.confirmationSelectionKey, 200)) {
+    return "Confirmation Practice Days must link the immutable evidence-qualified finalist selection.";
   }
   if (!boundedText(value.rotationTitle, 180) || !boundedText(value.teachingPurpose)) {
     return "The Practice Day needs a bounded rotation title and teaching purpose.";
@@ -213,14 +238,62 @@ export function validatePracticeDay(value: unknown, epoch: unknown): string | nu
   return null;
 }
 
+export function validateConfirmationSelection(value: unknown, epoch: unknown): string | null {
+  const invalidEpoch = validateCurriculumEpoch(epoch);
+  if (invalidEpoch) return invalidEpoch;
+  if (!object(value) || !onlyKeys(value, ["contractVersion", "selectionKey", "selectedLearnerDate", "finalists"])) {
+    return "Confirmation needs one bounded evidence-qualified finalist selection.";
+  }
+  const typedEpoch = epoch as CurriculumEpochInput;
+  if (value.contractVersion !== COURSE_FIRST_CONTRACT_VERSION
+    || !isCanonicalDate(value.selectedLearnerDate)
+    || value.selectedLearnerDate < typedEpoch.startedLearnerDate
+    || value.selectionKey !== `${typedEpoch.epochKey}|confirmation`) {
+    return "The confirmation selection must preserve its epoch-derived identity and selection date.";
+  }
+  if (!Array.isArray(value.finalists) || value.finalists.length !== 2) {
+    return "Exactly two evidence-qualified sectors advance to confirmation.";
+  }
+  const evidenceKeys = [
+    "sector", "curiosityEvidence", "accessEvidence", "analyticalAdvantageEvidence",
+    "originalInsightEvidence", "independentDealFlowEvidence",
+  ];
+  for (const finalist of value.finalists) {
+    if (!object(finalist) || !onlyKeys(finalist, evidenceKeys)
+      || !(COURSE_FIRST_BREADTH_ROTATIONS as readonly string[]).includes(String(finalist.sector))
+      || evidenceKeys.slice(1).some((key) => !boundedText(finalist[key], 2_000))) {
+      return "Each confirmation finalist needs bounded evidence across all five sector-advantage dimensions.";
+    }
+  }
+  if (value.finalists[0].sector === value.finalists[1].sector) {
+    return "Confirmation finalists must be two different sectors.";
+  }
+  return null;
+}
+
 export function validateCourseFirstCurriculum(value: unknown, learnerDate?: string): string | null {
-  if (!object(value) || !onlyKeys(value, ["epoch", "practiceDay"])) {
+  if (!object(value) || !onlyKeys(value, ["epoch", "practiceDay", "confirmationSelection"])) {
     return "A course-first run needs one Curriculum Epoch and one Practice Day.";
   }
   const invalidEpoch = validateCurriculumEpoch(value.epoch);
   if (invalidEpoch) return invalidEpoch;
   const invalidDay = validatePracticeDay(value.practiceDay, value.epoch);
   if (invalidDay) return invalidDay;
+  const day = value.practiceDay as PracticeDayInput;
+  if (day.phase === "confirmation") {
+    const invalidSelection = validateConfirmationSelection(value.confirmationSelection, value.epoch);
+    if (invalidSelection) return invalidSelection;
+    const selection = value.confirmationSelection as ConfirmationSelectionInput;
+    if (day.confirmationSelectionKey !== selection.selectionKey) {
+      return "The Practice Day must link the supplied immutable confirmation selection.";
+    }
+    const expectedFinalist = Number(day.rotationWeek) <= 9 ? selection.finalists[0] : selection.finalists[1];
+    if (day.sector !== expectedFinalist.sector) {
+      return "Weeks 7–9 and 10–12 must remain locked to their respective evidence-qualified finalists.";
+    }
+  } else if (value.confirmationSelection !== undefined) {
+    return "Breadth runs cannot carry a confirmation selection.";
+  }
   if (learnerDate && (value.practiceDay as PracticeDayInput).learnerDate !== learnerDate) {
     return "The Practice Day date must match the immutable Daily Assignment date.";
   }

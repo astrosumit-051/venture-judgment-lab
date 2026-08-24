@@ -21,7 +21,17 @@ only a search surface and falsifiable hypothesis; company names remain withheld.
 - Checkpoint progress is projected from immutable records and events, never
   stored as mutable completion flags.
 - Three owner-linked Sourcing Leads are required before a Practice Day Snapshot
-  can lock, and the selected lead must belong to that same Practice Day.
+  can lock. All three must retain effective `Independent discovery`
+  attribution, the selected lead must belong to that same Practice Day, and a
+  database uniqueness boundary permits only one locked Snapshot per day.
+- Confirmation begins only after 30 ordered Practice Days. One immutable
+  selection preserves two different finalists with evidence across curiosity,
+  access, analytical advantage, original insight, and independent deal flow;
+  weeks 7–9 and 10–12 stay locked to their respective finalist.
+- Course-first completion remains withheld until all four reading responses,
+  exactly three independent discoveries, one Snapshot, one Forecast, and one
+  recruiting action exist. Preserve is therefore evidence-derived, not a
+  learner-controlled checkbox.
 - Existing unfinished conversations are preserved by appending a
   `pre_curriculum` abandonment turn when the first epoch is committed.
 - Practice Day links are owner-validated before they can contribute to progress.
@@ -31,11 +41,12 @@ only a search surface and falsifiable hypothesis; company names remain withheld.
 ## Verification
 
 - `npm run local:verify` passed on 2026-08-24.
-- 72 unit and contract tests passed.
+- 73 unit and contract tests passed.
 - The isolated API journey passed epoch/Practice Day creation, two-draft
   archival, owner isolation, exact replay/conflict, reading responses, linked
-  Forecast progress, deterministic export, restart persistence, and 10,000-row
-  archive performance.
+  Forecast progress, rejection of assigned sourcing, the three-company and
+  one-Snapshot boundaries, premature-completion withholding, deterministic
+  export, restart persistence, and 10,000-row archive performance.
 - The local browser smoke passed navigation, provider recovery, responsive fit,
   lazy loading, keyboard focus, and large-history pagination.
 

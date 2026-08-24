@@ -419,6 +419,34 @@ export async function POST(request: Request) {
         ));
       }
     }
+    const priorDays = await db.prepare(
+      `SELECT payload_json FROM lab_records WHERE owner_id = ? AND record_type = 'practice_day'
+       ORDER BY json_extract(payload_json, '$.curriculumDay') ASC`,
+    ).bind(owner).all<{ payload_json: string }>();
+    const days = (priorDays.results ?? []).map((row) => parseJson(row.payload_json));
+    const lastDay = days.at(-1);
+    if (curriculum.practiceDay.curriculumDay !== days.length + 1
+      || (lastDay && text(lastDay.learnerDate, 20) >= curriculum.practiceDay.learnerDate)) {
+      return Response.json({ error: "Practice Days must advance one curriculum day at a time on a later learner date; missed days create no catch-up debt." }, { status: 409 });
+    }
+    if (curriculum.confirmationSelection) {
+      const existingSelection = await db.prepare(
+        `SELECT id, payload_json FROM lab_records
+         WHERE owner_id = ? AND record_type = 'confirmation_selection' LIMIT 1`,
+      ).bind(owner).first<{ id: string; payload_json: string }>();
+      if (existingSelection && canonicalJson(parseJson(existingSelection.payload_json)) !== canonicalJson(curriculum.confirmationSelection)) {
+        return Response.json({ error: "The immutable confirmation finalists already exist with different qualification evidence." }, { status: 409 });
+      }
+      const selectionId = existingSelection?.id ?? crypto.randomUUID();
+      if (!existingSelection) {
+        statements.push(insertRecord(db, {
+          id: selectionId, owner, recordType: "confirmation_selection", parentId: epochId,
+          title: "Evidence-qualified confirmation finalists",
+          payload: curriculum.confirmationSelection,
+          now,
+        }));
+      }
+    }
   }
 
   if (state === "ready") {

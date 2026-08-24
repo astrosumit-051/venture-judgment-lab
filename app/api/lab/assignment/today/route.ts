@@ -1,6 +1,7 @@
 import { currentLabOwnerId } from "@/app/labOwner";
 import { dateInTimeZone } from "@/app/calibration";
 import { ensureLabSchema } from "@/db/runtime";
+import { independentPracticeDayLeadIds } from "@/app/practiceProgress";
 
 export const dynamic = "force-dynamic";
 
@@ -146,16 +147,19 @@ export async function GET() {
 
   let progress: Record<string, unknown> | null = null;
   if (practiceDayId) {
-    const linked = await db.prepare(
-      `SELECT record_type, COUNT(*) AS count FROM lab_records
-       WHERE owner_id = ? AND json_extract(payload_json, '$.practiceDayId') = ?
-       GROUP BY record_type`,
-    ).bind(owner, practiceDayId).all<{ record_type: string; count: number }>();
+    const [linked, independentLeadIds] = await Promise.all([
+      db.prepare(
+        `SELECT record_type, COUNT(*) AS count FROM lab_records
+         WHERE owner_id = ? AND json_extract(payload_json, '$.practiceDayId') = ?
+         GROUP BY record_type`,
+      ).bind(owner, practiceDayId).all<{ record_type: string; count: number }>(),
+      independentPracticeDayLeadIds(db, owner, practiceDayId),
+    ]);
     const counts = new Map((linked.results ?? []).map((row) => [row.record_type, Number(row.count)]));
     const completedReadings = new Set(publicEvents
       .filter((event) => event.eventType === "learner_response" && readingRows.some((reading) => reading.id === event.recordId))
       .map((event) => event.recordId)).size;
-    const sourcingCount = counts.get("sourcing_lead") ?? 0;
+    const sourcingCount = independentLeadIds.length;
     const snapshotCount = counts.get("snapshot_judgment") ?? 0;
     const scanUnits = Math.min(sourcingCount, 3) + (snapshotCount > 0 ? 1 : 0);
     const recruitingCount = [
@@ -168,7 +172,7 @@ export async function GET() {
         requiredCompanies: 3,
         discoveredCompanies: sourcingCount,
         snapshotLocked: snapshotCount > 0,
-        state: sourcingCount >= 3 && snapshotCount > 0 ? "complete" : progressState(scanUnits, 4),
+        state: sourcingCount === 3 && snapshotCount === 1 ? "complete" : progressState(scanUnits, 4),
       },
       forecast: { required: 1, completed: counts.get("forecast") ?? 0, state: progressState(counts.get("forecast") ?? 0, 1) },
       recruiting: { required: 1, completed: recruitingCount, state: progressState(recruitingCount, 1) },

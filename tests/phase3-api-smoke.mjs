@@ -281,6 +281,114 @@ await lab({
   title: "Cross-owner course-first linked forecast",
   payload: linkedForecastPayload,
 }, 404, otherHeaders);
+const sourcingExperiment = await lab({
+  operation: "commit_record",
+  recordType: "sourcing_experiment",
+  title: "Course-first independent discovery surface",
+  payload: {
+    name: "AI infrastructure workflow-pull discovery",
+    channel: "Technical ecosystem",
+    targetSegment: "Early-stage AI infrastructure",
+    searchSurface: "Founder product launches and technical ecosystem announcements",
+    hypothesis: "Workflow pull will produce observable usage evidence beyond demo novelty.",
+    leadingSignal: "A named workflow repeats after initial implementation.",
+    nonConsensusRationale: "Technical workflow evidence may precede broad financing coverage.",
+    startDate: currentLearnerDate,
+    endDate: currentLearnerDate,
+    plannedLeads: 3,
+    successCondition: "Three independently discovered companies with traceable public provenance.",
+    stopRule: "Stop after three companies and compare them before selecting one.",
+    timezone: "America/Chicago",
+  },
+});
+const baseLead = {
+  experimentId: sourcingExperiment.id,
+  attributionClass: "Independent discovery",
+  channel: "Technical ecosystem",
+  sourceVisibility: "Public source",
+  discoveredOn: currentLearnerDate,
+  sector: "AI and data systems",
+  companyStage: "Seed",
+  observedSignal: "A public product launch names a repeated technical workflow.",
+  nonConsensusReason: "The workflow signal precedes broad financing coverage.",
+  qualificationThesis: "Repeated technical adoption may compound into distribution and switching costs.",
+  ventureMechanism: "Workflow data and integrations may strengthen retention over time.",
+  disqualifier: "No evidence yet that early workflow pull persists across customers.",
+  initialDisposition: "Advance to Snapshot",
+  outreachAngle: "Ask what repeated after the first implementation.",
+  nextAction: "Compare the observed product, why now, strongest signal, and key unknown.",
+  dueDate: currentLearnerDate,
+  initialStage: "discovered",
+  timezone: "America/Chicago",
+  privateEvidenceConfirmed: false,
+  practiceDayId: accepted.practiceDayId,
+};
+await lab({
+  operation: "commit_record",
+  recordType: "sourcing_lead",
+  parentId: sourcingExperiment.id,
+  title: "Assigned company cannot count toward Practice Day discovery",
+  payload: {
+    ...baseLead,
+    company: "Assigned Phase 3 Co",
+    companyUrl: `https://assigned-${suffix}.example.com`,
+    attributionClass: "Assigned search",
+    sourceVisibility: "Internal assignment",
+    sourceReference: "Bounded internal assignment context.",
+    privateEvidenceConfirmed: true,
+  },
+}, 400);
+const courseFirstLeads = [];
+for (let index = 0; index < 3; index += 1) courseFirstLeads.push(await lab({
+  operation: "commit_record",
+  recordType: "sourcing_lead",
+  parentId: sourcingExperiment.id,
+  title: `Independent Phase 3 company ${index + 1}`,
+  payload: {
+    ...baseLead,
+    company: `Independent Phase 3 Co ${index + 1}`,
+    companyUrl: `https://independent-${suffix}-${index}.example.com`,
+    sourceReference: `https://example.com/independent-phase3-${suffix}-${index}`,
+  },
+}));
+await lab({
+  operation: "advance_sourcing_lead",
+  leadId: courseFirstLeads[0].id,
+  progress: {
+    leadId: courseFirstLeads[0].id,
+    updateKind: "Sourcing Progress",
+    occurredOn: currentLearnerDate,
+    nextStage: "qualified",
+    outreachChannel: "No outreach yet",
+    observedEvidence: "The comparison preserved one causal mechanism and one explicit disqualifier.",
+    relationshipQuality: "No direct interaction",
+    outcome: "Active",
+    nextAction: "Lock the concise independent Snapshot.",
+    dueDate: currentLearnerDate,
+    privateEvidenceConfirmed: true,
+    timezone: "America/Chicago",
+  },
+});
+const selectedSnapshotPayload = {
+  practiceDayId: accepted.practiceDayId,
+  sourcingLeadId: courseFirstLeads[0].id,
+  company: "Independent Phase 3 Co 1",
+  stage: "Seed",
+  sector: "AI and data systems",
+  discoverySource: "Independent discovery · Technical ecosystem",
+  thesis: "The company matters if observed workflow pull persists beyond the launch context.",
+  ventureMechanism: "Repeated integrations could compound workflow data and switching costs.",
+  disposition: "Watch",
+  confidence: 58,
+  crux: "Whether usage repeats across independent customer workflows.",
+  supportingEvidence: "A public launch names a repeated technical workflow.",
+  supportingSourceUrl: `https://example.com/independent-phase3-${suffix}-0`,
+  disconfirmingSignal: "No cross-customer retention evidence is public yet.",
+  topUnknown: "Whether the observed workflow survives beyond the initial launch.",
+  nextEvidence: "Find one customer-owned usage or retention signal.",
+};
+await lab({ operation: "commit_record", recordType: "snapshot_judgment", parentId: courseFirstLeads[0].id, title: "Selected course-first Snapshot", payload: selectedSnapshotPayload });
+await lab({ operation: "commit_record", recordType: "snapshot_judgment", parentId: courseFirstLeads[0].id, title: "Duplicate course-first Snapshot", payload: selectedSnapshotPayload }, 409);
 const archivedDrafts = await json("/api/lab/conversations", { headers: ownerHeaders }, 200);
 assert.equal(archivedDrafts.conversations.filter((item) => preCurriculumDrafts.some((draft) => draft.conversation.id === item.id)).every((item) => (
   item.phase === "abandoned"
@@ -328,16 +436,6 @@ for (let index = 0; index < accepted.readingIds.length; index += 1) await lab({
     privateEvidenceConfirmed: true,
   },
 });
-const completion = await lab({
-  operation: "append_event",
-  recordId: accepted.assignmentRecordId,
-  eventType: "completion",
-  eventData: {
-    completedLearnerDate: learnerDate,
-    originalPreserved: true,
-  },
-});
-assert.ok(completion.id);
 await lab({
   operation: "append_event",
   recordId: accepted.assignmentRecordId,
@@ -373,8 +471,9 @@ if (learnerDate === currentLearnerDate) {
   assert.equal(today.practiceDay.dailyBriefId, accepted.dailyBriefId);
   assert.equal(today.progress.readings.completed, 4);
   assert.equal(today.progress.readings.state, "complete");
-  assert.equal(today.progress.scanAndJudge.state, "not_started");
+  assert.equal(today.progress.scanAndJudge.state, "complete");
   assert.equal(today.progress.forecast.state, "complete");
+  assert.equal(today.progress.preserve.state, "not_started");
   assert.equal(today.assignment.brief.readings.length, 4);
   assert.equal(today.assignment.events.some((event) => event.eventType === "learner_response"), true);
   assert.equal(today.assignment.events.some((event) => event.eventType === "source_status"), true);
@@ -382,4 +481,4 @@ if (learnerDate === currentLearnerDate) {
   assert.equal(today.assignment, null);
 }
 
-console.log("Phase 3 API smoke passed: course-first epoch and Practice Day delivery, pre-curriculum draft archival, derived progress, immutable replay/conflict, deterministic export, and owner isolation.");
+console.log("Phase 3 API smoke passed: course-first epoch and Practice Day delivery, pre-curriculum draft archival, derived progress, premature-completion withholding, immutable replay/conflict, deterministic export, and owner isolation.");

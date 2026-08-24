@@ -56,6 +56,7 @@ import {
   type SourcingEventLike,
   type SourcingStage,
 } from "@/app/sourcing";
+import { independentPracticeDayLeadIds } from "@/app/practiceProgress";
 
 export const dynamic = "force-dynamic";
 
@@ -1251,14 +1252,26 @@ export async function POST(request: Request) {
         return Response.json({ error: "The linked Practice Day was not found in your private curriculum epoch." }, { status: 404 });
       }
       payload = { ...payload, practiceDayId: practiceDay.id };
+      if (recordType === "sourcing_lead" && cleanText(payload.attributionClass, 100) !== "Independent discovery") {
+        return Response.json({ error: "Only honestly attributed Independent discovery leads can belong to the daily three-company Practice Day comparison." }, { status: 400 });
+      }
+      if (recordType === "sourcing_lead") {
+        const existingLeadIds = await independentPracticeDayLeadIds(db, owner, practiceDay.id);
+        if (existingLeadIds.length >= 3) {
+          return Response.json({ error: "This Practice Day already has its three independently discovered companies." }, { status: 409 });
+        }
+      }
       if (recordType === "snapshot_judgment") {
-        const discovered = await db.prepare(
-          `SELECT COUNT(*) AS count FROM lab_records
-           WHERE owner_id = ? AND record_type = 'sourcing_lead'
-             AND json_extract(payload_json, '$.practiceDayId') = ?`,
-        ).bind(owner, practiceDay.id).first<{ count: number }>();
-        if (Number(discovered?.count ?? 0) < 3) {
+        const independentLeadIds = await independentPracticeDayLeadIds(db, owner, practiceDay.id);
+        if (independentLeadIds.length < 3) {
           return Response.json({ error: "Discover and preserve three companies independently in this Practice Day before locking one Snapshot." }, { status: 409 });
+        }
+        const existingSnapshot = await db.prepare(
+          `SELECT id FROM lab_records WHERE owner_id = ? AND record_type = 'snapshot_judgment'
+           AND json_extract(payload_json, '$.practiceDayId') = ? LIMIT 1`,
+        ).bind(owner, practiceDay.id).first<{ id: string }>();
+        if (existingSnapshot) {
+          return Response.json({ error: "This Practice Day already has its one immutable selected-company Snapshot." }, { status: 409 });
         }
       }
     }
@@ -1380,6 +1393,12 @@ export async function POST(request: Request) {
         const originalLeadPayload = parseJson(parent.payload_json);
         if (submittedPracticeDayId && cleanText(originalLeadPayload.practiceDayId, 80) !== submittedPracticeDayId) {
           return Response.json({ error: "The selected company must have been independently discovered in this same Practice Day." }, { status: 400 });
+        }
+        if (submittedPracticeDayId) {
+          const independentLeadIds = await independentPracticeDayLeadIds(db, owner, submittedPracticeDayId);
+          if (!independentLeadIds.includes(parent.id)) {
+            return Response.json({ error: "The selected company needs effective Independent discovery attribution in this Practice Day." }, { status: 400 });
+          }
         }
         const progressRows = await db
           .prepare("SELECT event_type, event_json, occurred_at FROM lab_events WHERE owner_id = ? AND record_id = ? AND event_type IN ('sourcing_progress', 'sourcing_metadata_correction')")
@@ -1655,6 +1674,10 @@ export async function POST(request: Request) {
       if ((COACH_RECORD_TYPES as readonly string[]).includes(recordType) && error instanceof Error && error.message.toLowerCase().includes("unique")) {
         return Response.json({ error: "This Judgment Coach identity already exists; preserved evidence cannot be replaced." }, { status: 409 });
       }
+      if (recordType === "snapshot_judgment" && submittedPracticeDayId
+        && error instanceof Error && error.message.toLowerCase().includes("unique")) {
+        return Response.json({ error: "This Practice Day already has its one immutable selected-company Snapshot." }, { status: 409 });
+      }
       throw error;
     }
     return Response.json({
@@ -1727,6 +1750,28 @@ export async function POST(request: Request) {
             (responses.results ?? []).map((response) => response.record_id),
           );
           if (completionError) return Response.json({ error: completionError }, { status: 409 });
+          const practiceDayId = cleanText(assignmentPayload.practiceDayId, 80);
+          if (practiceDayId) {
+            const [independentLeadIds, linked] = await Promise.all([
+              independentPracticeDayLeadIds(db, owner, practiceDayId),
+              db.prepare(
+                `SELECT record_type, COUNT(*) AS count FROM lab_records
+                 WHERE owner_id = ? AND json_extract(payload_json, '$.practiceDayId') = ?
+                 GROUP BY record_type`,
+              ).bind(owner, practiceDayId).all<{ record_type: string; count: number }>(),
+            ]);
+            const counts = new Map((linked.results ?? []).map((row) => [row.record_type, Number(row.count)]));
+            const recruitingCount = [
+              "recruiting_opportunity", "opportunity_observation", "recruiting_interaction",
+              "application_attempt", "interview_practice", "portfolio_candidate",
+            ].reduce((sum, type) => sum + (counts.get(type) ?? 0), 0);
+            if (independentLeadIds.length !== 3
+              || (counts.get("snapshot_judgment") ?? 0) !== 1
+              || (counts.get("forecast") ?? 0) < 1
+              || recruitingCount < 1) {
+              return Response.json({ error: "Complete three independent company discoveries, one locked Snapshot, one Forecast, and one recruiting action before preserving this Practice Day." }, { status: 409 });
+            }
+          }
         }
         if (eventType === "missed_practice") {
           const timezone = cleanText(assignmentPayload.timezone, 100);

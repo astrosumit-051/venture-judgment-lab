@@ -37,3 +37,9 @@ Day 1, notify the learner, or change the hosted Site.
   merged desktop visual target. The pre-agreed public seams are the pure
   curriculum/practice-day contract, authenticated Daily Operator POST, and
   learner-facing Today GET projection.
+- 2026-08-24: First two-axis review rejected completion-after-readings,
+  non-independent discovery counting, multiple same-day Snapshots, and an
+  under-specified confirmation cycle. The implementation now withholds course
+  completion until every route output exists, counts effective Independent
+  discovery only, permits exactly one Snapshot, advances curriculum days in
+  order, and locks two evidence-qualified finalists into three-week sprints.

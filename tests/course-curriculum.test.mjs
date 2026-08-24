@@ -6,6 +6,7 @@ import {
   COURSE_FIRST_BREADTH_ROTATIONS,
   COURSE_FIRST_CHECKPOINTS,
   NORMAL_WEEK_MINUTES,
+  validateCourseFirstCurriculum,
   validateCurriculumEpoch,
   validatePracticeDay,
 } from "../app/courseCurriculum.ts";
@@ -87,4 +88,43 @@ test("practice days reject supplied companies and mutable checkpoint completion"
     })),
   });
   assert.match(validatePracticeDay(storedProgress, courseFirstEpoch()), /derived/i);
+});
+
+test("curriculum days advance in order and confirmation locks two qualified finalists for three weeks each", () => {
+  assert.match(validatePracticeDay(courseFirstPracticeDay({ curriculumDay: 6, rotationWeek: 1 }), courseFirstEpoch()), /five ordered/i);
+  const confirmationSelection = {
+    contractVersion: "course_first_v1",
+    selectionKey: "course-first|2026-08-24|confirmation",
+    selectedLearnerDate: "2026-10-05",
+    finalists: ["AI and data systems", "Cybersecurity and digital trust"].map((sector) => ({
+      sector,
+      curiosityEvidence: `Curiosity evidence for ${sector}`,
+      accessEvidence: `Access evidence for ${sector}`,
+      analyticalAdvantageEvidence: `Analytical advantage evidence for ${sector}`,
+      originalInsightEvidence: `Original insight evidence for ${sector}`,
+      independentDealFlowEvidence: `Independent deal flow evidence for ${sector}`,
+    })),
+  };
+  const weekSeven = courseFirstPracticeDay({
+    learnerDate: "2026-10-05",
+    practiceDayKey: "course-first|2026-08-24|2026-10-05",
+    curriculumDay: 31,
+    rotationWeek: 7,
+    phase: "confirmation",
+    sector: "AI and data systems",
+    confirmationSelectionKey: confirmationSelection.selectionKey,
+  });
+  assert.equal(validateCourseFirstCurriculum({ epoch: courseFirstEpoch(), practiceDay: weekSeven, confirmationSelection }), null);
+  assert.match(validateCourseFirstCurriculum({
+    epoch: courseFirstEpoch(),
+    practiceDay: { ...weekSeven, sector: "Cybersecurity and digital trust" },
+    confirmationSelection,
+  }) ?? "", /locked/i);
+  const weekTen = {
+    ...weekSeven,
+    curriculumDay: 46,
+    rotationWeek: 10,
+    sector: "Cybersecurity and digital trust",
+  };
+  assert.equal(validateCourseFirstCurriculum({ epoch: courseFirstEpoch(), practiceDay: weekTen, confirmationSelection }), null);
 });
