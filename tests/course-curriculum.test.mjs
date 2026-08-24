@@ -91,7 +91,22 @@ test("practice days reject supplied companies and mutable checkpoint completion"
 });
 
 test("curriculum days advance in order and confirmation locks two qualified finalists for three weeks each", () => {
-  assert.match(validatePracticeDay(courseFirstPracticeDay({ curriculumDay: 6, rotationWeek: 1 }), courseFirstEpoch()), /five ordered/i);
+  assert.match(validatePracticeDay(courseFirstPracticeDay({
+    learnerDate: "2026-08-31",
+    practiceDayKey: "course-first|2026-08-24|2026-08-31",
+    curriculumDay: 6,
+    rotationWeek: 1,
+  }), courseFirstEpoch()), /five ordered/i);
+  assert.equal(validatePracticeDay(courseFirstPracticeDay({
+    learnerDate: "2026-08-26",
+    practiceDayKey: "course-first|2026-08-24|2026-08-26",
+    curriculumDay: 3,
+  }), courseFirstEpoch()), null);
+  assert.match(validatePracticeDay(courseFirstPracticeDay({
+    learnerDate: "2026-08-26",
+    practiceDayKey: "course-first|2026-08-24|2026-08-26",
+    curriculumDay: 2,
+  }), courseFirstEpoch()) ?? "", /no catch-up debt/i);
   const confirmationSelection = {
     contractVersion: "course_first_v1",
     selectionKey: "course-first|2026-08-24|confirmation",
@@ -117,11 +132,18 @@ test("curriculum days advance in order and confirmation locks two qualified fina
   assert.equal(validateCourseFirstCurriculum({ epoch: courseFirstEpoch(), practiceDay: weekSeven, confirmationSelection }), null);
   assert.match(validateCourseFirstCurriculum({
     epoch: courseFirstEpoch(),
+    practiceDay: weekSeven,
+    confirmationSelection: { ...confirmationSelection, selectedLearnerDate: "2026-08-24" },
+  }) ?? "", /after the six breadth rotations/i);
+  assert.match(validateCourseFirstCurriculum({
+    epoch: courseFirstEpoch(),
     practiceDay: { ...weekSeven, sector: "Cybersecurity and digital trust" },
     confirmationSelection,
   }) ?? "", /locked/i);
   const weekTen = {
     ...weekSeven,
+    learnerDate: "2026-10-26",
+    practiceDayKey: "course-first|2026-08-24|2026-10-26",
     curriculumDay: 46,
     rotationWeek: 10,
     sector: "Cybersecurity and digital trust",

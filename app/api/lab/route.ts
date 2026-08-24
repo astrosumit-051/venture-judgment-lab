@@ -1246,10 +1246,25 @@ export async function POST(request: Request) {
         return Response.json({ error: "This record type cannot contribute to derived Practice Day progress." }, { status: 400 });
       }
       const practiceDay = await db.prepare(
-        "SELECT id FROM lab_records WHERE id = ? AND owner_id = ? AND record_type = 'practice_day' LIMIT 1",
-      ).bind(submittedPracticeDayId, owner).first<{ id: string }>();
+        "SELECT id, payload_json FROM lab_records WHERE id = ? AND owner_id = ? AND record_type = 'practice_day' LIMIT 1",
+      ).bind(submittedPracticeDayId, owner).first<{ id: string; payload_json: string }>();
       if (!practiceDay) {
         return Response.json({ error: "The linked Practice Day was not found in your private curriculum epoch." }, { status: 404 });
+      }
+      const practiceLearnerDate = cleanText(parseJson(practiceDay.payload_json).learnerDate, 20);
+      const practiceDateKeys: Record<string, string> = {
+        sourcing_lead: "discoveredOn",
+        recruiting_opportunity: "discoveredOn",
+        opportunity_observation: "observedOn",
+        recruiting_interaction: "occurredOn",
+        application_attempt: "attemptedOn",
+        interview_practice: "practicedOn",
+        portfolio_candidate: "capturedOn",
+        revision_attempt: "attemptedOn",
+      };
+      const practiceDateKey = practiceDateKeys[recordType];
+      if (practiceDateKey && cleanText(payload[practiceDateKey], 20) !== practiceLearnerDate) {
+        return Response.json({ error: "Practice Day evidence must preserve the same learner date as its daily route." }, { status: 400 });
       }
       payload = { ...payload, practiceDayId: practiceDay.id };
       if (recordType === "sourcing_lead" && cleanText(payload.attributionClass, 100) !== "Independent discovery") {
@@ -1260,6 +1275,7 @@ export async function POST(request: Request) {
         if (existingLeadIds.length >= 3) {
           return Response.json({ error: "This Practice Day already has its three independently discovered companies." }, { status: 409 });
         }
+        payload = { ...payload, practiceCompanySlot: existingLeadIds.length + 1 };
       }
       if (recordType === "snapshot_judgment") {
         const independentLeadIds = await independentPracticeDayLeadIds(db, owner, practiceDay.id);
@@ -1662,6 +1678,10 @@ export async function POST(request: Request) {
     try {
       await insertRecord(db, { id, owner, recordType, parentId, title, payload, now }).run();
     } catch (error) {
+      if (recordType === "sourcing_lead" && submittedPracticeDayId
+        && error instanceof Error && error.message.toLowerCase().includes("unique")) {
+        return Response.json({ error: "This Practice Day already owns that independent company or company slot; reload its derived comparison." }, { status: 409 });
+      }
       if (recordType === "sourcing_lead" && error instanceof Error && error.message.toLowerCase().includes("unique")) {
         return Response.json({ error: "This company already has a Sourcing Lead; append new channel or relationship evidence instead." }, { status: 409 });
       }

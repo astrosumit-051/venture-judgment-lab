@@ -423,7 +423,35 @@ await lab({
     originalPreserved: true,
   },
 }, 409);
-
+await lab({
+  operation: "commit_record",
+  recordType: "recruiting_opportunity",
+  title: "Course-first recruiting evidence",
+  payload: {
+    practiceDayId: accepted.practiceDayId,
+    firm: "Phase 3 Ventures",
+    roleTitle: "Summer 2027 investing role research",
+    cycleKey: `summer-2027-${suffix}`,
+    opportunityClass: "Relationship-led target",
+    funnelClass: "Relationship target",
+    officialUrl: `https://phase3-${suffix}.example.com/careers`,
+    location: "United States",
+    workMode: "Unknown",
+    discoveredOn: learnerDate,
+    verifiedOn: learnerDate,
+    timezone: "America/Chicago",
+    initialStatus: "No public opening",
+    deadlineTimezone: "Not stated",
+    compensationEvidence: "No role or compensation is published; no employment claim is made.",
+    roleScope: "One bounded first-party target review for the daily recruiting checkpoint.",
+    qualificationReason: "The firm is relevant to early-stage technology investing, without assuming an opening.",
+    immigrationState: "Unknown",
+    immigrationEvidence: "No role exists to assess and no authorization is claimed.",
+    authorizationClaim: false,
+    nextAction: "Preserve the observation without contacting anyone.",
+    dueDate: learnerDate,
+  },
+});
 for (let index = 0; index < accepted.readingIds.length; index += 1) await lab({
   operation: "append_event",
   recordId: accepted.readingIds[index],
@@ -436,6 +464,16 @@ for (let index = 0; index < accepted.readingIds.length; index += 1) await lab({
     privateEvidenceConfirmed: true,
   },
 });
+const courseCompletion = await lab({
+  operation: "append_event",
+  recordId: accepted.assignmentRecordId,
+  eventType: "completion",
+  eventData: {
+    completedLearnerDate: learnerDate,
+    originalPreserved: true,
+  },
+});
+assert.ok(courseCompletion.id);
 await lab({
   operation: "append_event",
   recordId: accepted.assignmentRecordId,
@@ -473,7 +511,8 @@ if (learnerDate === currentLearnerDate) {
   assert.equal(today.progress.readings.state, "complete");
   assert.equal(today.progress.scanAndJudge.state, "complete");
   assert.equal(today.progress.forecast.state, "complete");
-  assert.equal(today.progress.preserve.state, "not_started");
+  assert.equal(today.progress.recruiting.state, "complete");
+  assert.equal(today.progress.preserve.state, "complete");
   assert.equal(today.assignment.brief.readings.length, 4);
   assert.equal(today.assignment.events.some((event) => event.eventType === "learner_response"), true);
   assert.equal(today.assignment.events.some((event) => event.eventType === "source_status"), true);
@@ -481,4 +520,4 @@ if (learnerDate === currentLearnerDate) {
   assert.equal(today.assignment, null);
 }
 
-console.log("Phase 3 API smoke passed: course-first epoch and Practice Day delivery, pre-curriculum draft archival, derived progress, premature-completion withholding, immutable replay/conflict, deterministic export, and owner isolation.");
+console.log("Phase 3 API smoke passed: course-first epoch and Practice Day delivery, pre-curriculum draft archival, derived progress, closed-and-open completion gates, immutable replay/conflict, deterministic export, and owner isolation.");

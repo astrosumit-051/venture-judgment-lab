@@ -24,7 +24,8 @@ only a search surface and falsifiable hypothesis; company names remain withheld.
   can lock. All three must retain effective `Independent discovery`
   attribution, the selected lead must belong to that same Practice Day, and a
   database uniqueness boundary permits only one locked Snapshot per day.
-- Confirmation begins only after 30 ordered Practice Days. One immutable
+- Confirmation begins only after 30 eligible weekdays from Day 1; unavailable
+  days remain auditable gaps and never create catch-up debt. One immutable
   selection preserves two different finalists with evidence across curiosity,
   access, analytical advantage, original insight, and independent deal flow;
   weeks 7–9 and 10–12 stay locked to their respective finalist.

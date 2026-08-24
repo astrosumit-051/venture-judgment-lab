@@ -83,6 +83,13 @@ export const labRecords = sqliteTable(
     uniqueIndex("idx_lab_records_unique_practice_snapshot")
       .on(table.ownerId, sql`json_extract(${table.payloadJson}, '$.practiceDayId')`)
       .where(sql`${table.recordType} = 'snapshot_judgment' AND json_extract(${table.payloadJson}, '$.practiceDayId') IS NOT NULL`),
+    uniqueIndex("idx_lab_records_unique_practice_company_slot")
+      .on(
+        table.ownerId,
+        sql`json_extract(${table.payloadJson}, '$.practiceDayId')`,
+        sql`json_extract(${table.payloadJson}, '$.practiceCompanySlot')`,
+      )
+      .where(sql`${table.recordType} = 'sourcing_lead' AND json_extract(${table.payloadJson}, '$.practiceDayId') IS NOT NULL`),
     uniqueIndex("idx_lab_records_unique_sourcing_domain")
       .on(table.ownerId, sql`json_extract(${table.payloadJson}, '$.normalizedCompanyDomain')`)
       .where(sql`${table.recordType} = 'sourcing_lead'`),

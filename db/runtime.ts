@@ -162,6 +162,9 @@ export async function ensureLabSchema(): Promise<D1Database> {
       "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_practice_snapshot ON lab_records(owner_id, json_extract(payload_json, '$.practiceDayId')) WHERE record_type = 'snapshot_judgment' AND json_extract(payload_json, '$.practiceDayId') IS NOT NULL",
     ),
     db.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_practice_company_slot ON lab_records(owner_id, json_extract(payload_json, '$.practiceDayId'), json_extract(payload_json, '$.practiceCompanySlot')) WHERE record_type = 'sourcing_lead' AND json_extract(payload_json, '$.practiceDayId') IS NOT NULL",
+    ),
+    db.prepare(
       "CREATE INDEX IF NOT EXISTS idx_lab_events_record_occurred ON lab_events(record_id, occurred_at)",
     ),
     db.prepare(

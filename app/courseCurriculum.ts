@@ -118,6 +118,31 @@ function equalStringArray(value: unknown, expected: readonly string[]): boolean 
     && value.every((item, index) => item === expected[index]);
 }
 
+function canonicalUtcDate(value: string): Date {
+  return new Date(`${value}T00:00:00.000Z`);
+}
+
+export function curriculumDayForLearnerDate(startedLearnerDate: string, learnerDate: string): number {
+  const start = canonicalUtcDate(startedLearnerDate);
+  const end = canonicalUtcDate(learnerDate);
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end < start) return 0;
+  let count = 0;
+  for (const cursor = new Date(start); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    if (cursor.getUTCDay() !== 0 && cursor.getUTCDay() !== 6) count += 1;
+  }
+  return count;
+}
+
+export function learnerDateForCurriculumDay(startedLearnerDate: string, curriculumDay: number): string {
+  const cursor = canonicalUtcDate(startedLearnerDate);
+  let count = 0;
+  while (count < curriculumDay) {
+    if (cursor.getUTCDay() !== 0 && cursor.getUTCDay() !== 6) count += 1;
+    if (count < curriculumDay) cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return cursor.toISOString().slice(0, 10);
+}
+
 export function validateCurriculumEpoch(value: unknown): string | null {
   if (!object(value) || JSON.stringify(value).length > 20_000) {
     return "The Curriculum Epoch must be a bounded structured record.";
@@ -134,6 +159,9 @@ export function validateCurriculumEpoch(value: unknown): string | null {
   }
   if (value.epochKey !== `course-first|${value.startedLearnerDate}`) {
     return "The Curriculum Epoch key must be derived from its immutable start date.";
+  }
+  if (curriculumDayForLearnerDate(value.startedLearnerDate, value.startedLearnerDate) !== 1) {
+    return "Day 1 of a course-first epoch must begin on an eligible weekday.";
   }
   if (value.destination !== "Summer 2027 early-stage investing role") {
     return "The course-first epoch must preserve the accepted Summer 2027 destination.";
@@ -180,6 +208,9 @@ export function validatePracticeDay(value: unknown, epoch: unknown): string | nu
   }
   if (!Number.isInteger(value.curriculumDay) || Number(value.curriculumDay) < 1) {
     return "The Practice Day needs a positive curriculum day number.";
+  }
+  if (Number(value.curriculumDay) !== curriculumDayForLearnerDate(typedEpoch.startedLearnerDate, String(value.learnerDate))) {
+    return "The curriculum day is derived from eligible weekdays since Day 1, so missed or unavailable routes create no catch-up debt.";
   }
   if (!Number.isInteger(value.rotationWeek) || Number(value.rotationWeek) < 1 || Number(value.rotationWeek) > 12) {
     return "The first Sector Discovery Cycle contains twelve completed rotation weeks.";
@@ -286,6 +317,12 @@ export function validateCourseFirstCurriculum(value: unknown, learnerDate?: stri
     const selection = value.confirmationSelection as ConfirmationSelectionInput;
     if (day.confirmationSelectionKey !== selection.selectionKey) {
       return "The Practice Day must link the supplied immutable confirmation selection.";
+    }
+    if (selection.selectedLearnerDate > day.learnerDate) {
+      return "Confirmation qualification evidence cannot be selected after the Practice Day that uses it.";
+    }
+    if (selection.selectedLearnerDate < learnerDateForCurriculumDay((value.epoch as CurriculumEpochInput).startedLearnerDate, 30)) {
+      return "Confirmation finalists can be selected only after the six breadth rotations have produced their evidence.";
     }
     const expectedFinalist = Number(day.rotationWeek) <= 9 ? selection.finalists[0] : selection.finalists[1];
     if (day.sector !== expectedFinalist.sector) {

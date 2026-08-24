@@ -425,9 +425,9 @@ export async function POST(request: Request) {
     ).bind(owner).all<{ payload_json: string }>();
     const days = (priorDays.results ?? []).map((row) => parseJson(row.payload_json));
     const lastDay = days.at(-1);
-    if (curriculum.practiceDay.curriculumDay !== days.length + 1
-      || (lastDay && text(lastDay.learnerDate, 20) >= curriculum.practiceDay.learnerDate)) {
-      return Response.json({ error: "Practice Days must advance one curriculum day at a time on a later learner date; missed days create no catch-up debt." }, { status: 409 });
+    if (lastDay && (text(lastDay.learnerDate, 20) >= curriculum.practiceDay.learnerDate
+      || Number(lastDay.curriculumDay) >= curriculum.practiceDay.curriculumDay)) {
+      return Response.json({ error: "Practice Days must advance to a later eligible curriculum date; unavailable days remain gaps with no catch-up debt." }, { status: 409 });
     }
     if (curriculum.confirmationSelection) {
       const existingSelection = await db.prepare(

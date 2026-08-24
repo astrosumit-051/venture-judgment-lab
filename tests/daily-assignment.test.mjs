@@ -151,6 +151,7 @@ test("course-first v2 wraps a valid Practice Day while historical v1 Briefs rema
   const wrongDate = courseFirstRun();
   wrongDate.curriculum.practiceDay.learnerDate = "2026-08-14";
   wrongDate.curriculum.practiceDay.practiceDayKey = "course-first|2026-08-13|2026-08-14";
+  wrongDate.curriculum.practiceDay.curriculumDay = 2;
   assert.match(validateDailyRun(wrongDate) ?? "", /must match.*Daily Assignment date/i);
 
   const unavailable = courseFirstRun();

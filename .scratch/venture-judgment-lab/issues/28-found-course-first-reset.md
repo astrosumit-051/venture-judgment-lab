@@ -43,3 +43,9 @@ Day 1, notify the learner, or change the hosted Site.
   completion until every route output exists, counts effective Independent
   discovery only, permits exactly one Snapshot, advances curriculum days in
   order, and locks two evidence-qualified finalists into three-week sprints.
+- 2026-08-24: Re-review identified catch-up debt, concurrent third-company
+  overfill, backdated finalist selection, cross-date daily evidence, and a
+  missing successful completion proof. Curriculum ordinals now derive from
+  eligible weekdays, daily company slots and the Snapshot are DB-unique,
+  qualification follows Day 30, linked evidence preserves the Practice Day
+  date, and API acceptance proves both closed and open completion gates.
