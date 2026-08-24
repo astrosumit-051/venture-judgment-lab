@@ -5,6 +5,10 @@ import {
   dailyRunChecksum,
   validateDailyRun,
 } from "../app/dailyAssignment.ts";
+import {
+  COURSE_FIRST_BREADTH_ROTATIONS,
+  COURSE_FIRST_CHECKPOINTS,
+} from "../app/courseCurriculum.ts";
 import { dailyOperatorRunKey, scheduledAtWeekdaySevenEastern } from "../app/dailyOperator.ts";
 
 const lanes = [
@@ -86,6 +90,51 @@ function readyRun() {
   };
 }
 
+function courseFirstRun() {
+  return {
+    ...readyRun(),
+    contractVersion: "course_first_v1",
+    curriculum: {
+      epoch: {
+        contractVersion: "course_first_v1",
+        epochKey: "course-first|2026-08-13",
+        startedLearnerDate: "2026-08-13",
+        timezone: "America/Chicago",
+        destination: "Summer 2027 early-stage investing role",
+        breadthRotations: [...COURSE_FIRST_BREADTH_ROTATIONS],
+        confirmationWeeksPerFinalist: 3,
+        postCycleAllocation: { provisionalFocus: 70, runnerUpAndDisconfirmation: 30 },
+        weekdayMinutes: 105,
+        normalWeekMinutes: 720,
+        calibrationWeekMinutes: 720,
+      },
+      practiceDay: {
+        contractVersion: "course_first_v1",
+        practiceDayKey: "course-first|2026-08-13|2026-08-13",
+        learnerDate: "2026-08-13",
+        curriculumDay: 1,
+        rotationWeek: 1,
+        phase: "breadth",
+        sector: "AI and data systems",
+        rotationTitle: "AI & Data Systems Rotation",
+        teachingPurpose: "Build conviction in data infrastructure and AI tooling.",
+        whyToday: [
+          "Build judgment on technical depth and defensibility.",
+          "Practice independent sourcing and founder-market-fit reasoning.",
+          "Strengthen falsifiable thinking with one clear forecast.",
+        ],
+        sourcingPrompt: {
+          surface: "Recent accelerator launches and founder product announcements.",
+          hypothesis: "Early AI infrastructure products with workflow pull will show evidence beyond demo novelty.",
+          companyNamesWithheld: true,
+        },
+        checkpoints: COURSE_FIRST_CHECKPOINTS.map((checkpoint) => ({ ...checkpoint })),
+        totalMinutes: 105,
+      },
+    },
+  };
+}
+
 test("a complete four-lane Daily Brief passes the pre-delivery contract", () => {
   assert.equal(validateDailyRun(readyRun()), null);
   assert.match(validateDailyRun({ ...readyRun(), ownerId: "caller-selected-owner" }) ?? "", /derived only from the registered automation credential/i);
@@ -93,6 +142,27 @@ test("a complete four-lane Daily Brief passes the pre-delivery contract", () => 
   const nestedExtra = readyRun();
   nestedExtra.assignment.brief.readings[0].rawPageContent = "must not enter the private record";
   assert.match(validateDailyRun(nestedExtra) ?? "", /undeclared field/i);
+});
+
+test("course-first v2 wraps a valid Practice Day while historical v1 Briefs remain accepted", () => {
+  assert.equal(validateDailyRun(readyRun()), null);
+  assert.equal(validateDailyRun(courseFirstRun()), null);
+
+  const wrongDate = courseFirstRun();
+  wrongDate.curriculum.practiceDay.learnerDate = "2026-08-14";
+  wrongDate.curriculum.practiceDay.practiceDayKey = "course-first|2026-08-13|2026-08-14";
+  assert.match(validateDailyRun(wrongDate) ?? "", /must match.*Daily Assignment date/i);
+
+  const unavailable = courseFirstRun();
+  unavailable.assignment = {
+    state: "brief_unavailable",
+    learnerDate: "2026-08-13",
+    timezone: "America/Chicago",
+    reason: "The route did not pass the public-source access gates.",
+    nextAction: "Investigate the source failure without reusing stale work.",
+  };
+  unavailable.notificationIntent = "intervention_required";
+  assert.match(validateDailyRun(unavailable) ?? "", /course-first curriculum is committed only with a ready route/i);
 });
 
 test("the Daily Brief contract rejects missing evidence gates and learner answers", () => {

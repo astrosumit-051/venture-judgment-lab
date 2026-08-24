@@ -134,6 +134,20 @@ const allowedEventTypes = new Set([
   ...ASSIGNMENT_EVENT_TYPES,
 ]);
 
+const PRACTICE_DAY_LINKABLE_RECORD_TYPES = new Set([
+  "sourcing_lead",
+  "snapshot_judgment",
+  "forecast",
+  "recruiting_opportunity",
+  "opportunity_observation",
+  "recruiting_interaction",
+  "application_attempt",
+  "interview_practice",
+  "portfolio_candidate",
+  "weekly_underwrite",
+  "revision_attempt",
+]);
+
 function parseJson(value: string): Record<string, unknown> {
   try {
     return JSON.parse(value) as Record<string, unknown>;
@@ -1144,7 +1158,12 @@ export async function POST(request: Request) {
     if (!title || !isObject(submittedPayload)) {
       return Response.json({ error: "A title and structured evidence are required." }, { status: 400 });
     }
-    let payload: Record<string, unknown> = submittedPayload;
+    const submittedPracticeDayId = cleanText(submittedPayload.practiceDayId, 80);
+    if (Object.hasOwn(submittedPayload, "practiceDayId") && !submittedPracticeDayId) {
+      return Response.json({ error: "The Practice Day link must be a non-empty immutable record id." }, { status: 400 });
+    }
+    let payload: Record<string, unknown> = { ...submittedPayload };
+    delete payload.practiceDayId;
     if (recordType === "calibration_review") {
       return Response.json({ error: "Commit Calibration Reviews through the scoring workflow." }, { status: 400 });
     }
@@ -1221,6 +1240,28 @@ export async function POST(request: Request) {
     }
     const invalid = validatePayload(recordType, payload);
     if (invalid) return Response.json({ error: invalid }, { status: 400 });
+    if (submittedPracticeDayId) {
+      if (!PRACTICE_DAY_LINKABLE_RECORD_TYPES.has(recordType)) {
+        return Response.json({ error: "This record type cannot contribute to derived Practice Day progress." }, { status: 400 });
+      }
+      const practiceDay = await db.prepare(
+        "SELECT id FROM lab_records WHERE id = ? AND owner_id = ? AND record_type = 'practice_day' LIMIT 1",
+      ).bind(submittedPracticeDayId, owner).first<{ id: string }>();
+      if (!practiceDay) {
+        return Response.json({ error: "The linked Practice Day was not found in your private curriculum epoch." }, { status: 404 });
+      }
+      payload = { ...payload, practiceDayId: practiceDay.id };
+      if (recordType === "snapshot_judgment") {
+        const discovered = await db.prepare(
+          `SELECT COUNT(*) AS count FROM lab_records
+           WHERE owner_id = ? AND record_type = 'sourcing_lead'
+             AND json_extract(payload_json, '$.practiceDayId') = ?`,
+        ).bind(owner, practiceDay.id).first<{ count: number }>();
+        if (Number(discovered?.count ?? 0) < 3) {
+          return Response.json({ error: "Discover and preserve three companies independently in this Practice Day before locking one Snapshot." }, { status: 409 });
+        }
+      }
+    }
 
     const isRecruitingChild = (RECRUITING_CHILD_RECORD_TYPES as readonly string[]).includes(recordType);
     const isDiligenceChild = recordType === "diligence_stage";
@@ -1337,6 +1378,9 @@ export async function POST(request: Request) {
           return Response.json({ error: "A sourced Snapshot can link only to its declared Sourcing Lead." }, { status: 400 });
         }
         const originalLeadPayload = parseJson(parent.payload_json);
+        if (submittedPracticeDayId && cleanText(originalLeadPayload.practiceDayId, 80) !== submittedPracticeDayId) {
+          return Response.json({ error: "The selected company must have been independently discovered in this same Practice Day." }, { status: 400 });
+        }
         const progressRows = await db
           .prepare("SELECT event_type, event_json, occurred_at FROM lab_events WHERE owner_id = ? AND record_id = ? AND event_type IN ('sourcing_progress', 'sourcing_metadata_correction')")
           .bind(owner, parentId)

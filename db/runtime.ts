@@ -150,6 +150,12 @@ export async function ensureLabSchema(): Promise<D1Database> {
       "CREATE INDEX IF NOT EXISTS idx_lab_records_owner_type ON lab_records(owner_id, record_type)",
     ),
     db.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_curriculum_epoch ON lab_records(owner_id) WHERE record_type = 'curriculum_epoch'",
+    ),
+    db.prepare(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_lab_records_unique_practice_day ON lab_records(owner_id, json_extract(payload_json, '$.practiceDayKey')) WHERE record_type = 'practice_day'",
+    ),
+    db.prepare(
       "CREATE INDEX IF NOT EXISTS idx_lab_events_record_occurred ON lab_events(record_id, occurred_at)",
     ),
     db.prepare(

@@ -1,4 +1,9 @@
 import { isCanonicalDate, isValidTimeZone } from "./calibration.ts";
+import {
+  COURSE_FIRST_CONTRACT_VERSION,
+  validateCourseFirstCurriculum,
+  type CourseFirstCurriculumInput,
+} from "./courseCurriculum.ts";
 import { DAILY_OPERATOR_COMPLETION_GRACE_MS, scheduledAtWeekdaySevenEastern } from "./dailyOperator.ts";
 import { canonicalJson, sha256Hex } from "./canonicalJson.ts";
 export { canonicalJson, sha256Hex } from "./canonicalJson.ts";
@@ -8,6 +13,8 @@ export const DAILY_BRIEF_LANES = ["Current signal", "Durable investing insight",
 export type DailyAssignmentState = typeof DAILY_ASSIGNMENT_STATES[number];
 type JsonObject = Record<string, unknown>;
 export type DailyRunInput = {
+  contractVersion?: typeof COURSE_FIRST_CONTRACT_VERSION;
+  curriculum?: CourseFirstCurriculumInput;
   scheduledFor: string;
   profileVersion: string;
   notificationIntent: "brief_ready" | "intervention_required" | "none";
@@ -114,7 +121,7 @@ function validateReading(reading: JsonObject, learnerDate: string): string | nul
 
 export function validateDailyRun(value: unknown, now?: Date): string | null {
   if (!isObject(value) || JSON.stringify(value).length > 200_000) return "The daily run must be a bounded structured request.";
-  if (!onlyKeys(value, ["scheduledFor", "profileVersion", "notificationIntent", "coachRequestIds", "coachFeedbackIds", "sourceStatusEventIds", "assignment"])) return "The daily run contains an undeclared field; the owner is derived only from the registered automation credential.";
+  if (!onlyKeys(value, ["contractVersion", "curriculum", "scheduledFor", "profileVersion", "notificationIntent", "coachRequestIds", "coachFeedbackIds", "sourceStatusEventIds", "assignment"])) return "The daily run contains an undeclared field; the owner is derived only from the registered automation credential.";
   if (!scheduledAtWeekdaySevenEastern(text(value.scheduledFor))) return "The daily run must use a weekday 7:00 AM America/New_York slot.";
   const scheduledTime = new Date(text(value.scheduledFor)).getTime();
   if (now && scheduledTime > now.getTime()) return "The daily run cannot be committed before its scheduled slot.";
@@ -129,6 +136,15 @@ export function validateDailyRun(value: unknown, now?: Date): string | null {
   const assignment = value.assignment;
   const state = text(assignment.state) as DailyAssignmentState;
   if (!(DAILY_ASSIGNMENT_STATES as readonly string[]).includes(state)) return "Choose a valid Daily Assignment state.";
+  const hasCourseVersion = "contractVersion" in value;
+  const hasCurriculum = "curriculum" in value;
+  if (hasCourseVersion !== hasCurriculum) return "A course-first run must include both its contract version and curriculum evidence.";
+  if (hasCourseVersion) {
+    if (value.contractVersion !== COURSE_FIRST_CONTRACT_VERSION) return "Choose the supported course-first Daily Operator version.";
+    if (state !== "ready") return "Course-first curriculum is committed only with a ready route; preserve unavailable outcomes without invented course work.";
+    const invalidCurriculum = validateCourseFirstCurriculum(value.curriculum, text(assignment.learnerDate));
+    if (invalidCurriculum) return invalidCurriculum;
+  }
   if (state !== "ready" && "brief" in assignment) return "An unavailable or displaced assignment cannot contain invented Brief readings.";
   const assignmentKeys = state === "ready"
     ? ["state", "learnerDate", "timezone", "brief"]

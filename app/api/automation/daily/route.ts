@@ -8,6 +8,7 @@ import {
   validateDailyRun,
   type DailyRunInput,
 } from "@/app/dailyAssignment";
+import type { CourseFirstCurriculumInput } from "@/app/courseCurriculum";
 import { dailyOperatorRunKey } from "@/app/dailyOperator";
 import { ensureLabSchema } from "@/db/runtime";
 import { env } from "cloudflare:workers";
@@ -118,14 +119,20 @@ async function duplicateRun(db: D1Database, owner: string, scheduledFor: string)
   return db.prepare(
     `SELECT run.id, run.scheduled_for, run.input_checksum, run.evidence_record_id, run.created_at,
             assignment.id AS assignment_id, assignment.state,
+            assignment.evidence_record_id AS assignment_record_id,
+            assignment_record.record_type AS assignment_record_type,
+            assignment_record.payload_json AS assignment_record_payload,
             EXISTS(SELECT 1 FROM lab_events event WHERE event.owner_id = run.owner_id
               AND event.record_id = run.evidence_record_id AND event.event_type = 'archive_preserved') AS archive_preserved
      FROM lab_automation_runs run
      JOIN lab_assignments assignment ON assignment.owner_id = run.owner_id AND assignment.automation_run_id = run.id
+     JOIN lab_records assignment_record ON assignment_record.owner_id = assignment.owner_id
+       AND assignment_record.id = assignment.evidence_record_id
      WHERE run.owner_id = ? AND run.operator_kind = 'daily_operator' AND run.scheduled_for = ? LIMIT 1`,
   ).bind(owner, scheduledFor).first<{
     id: string; scheduled_for: string; input_checksum: string; evidence_record_id: string; created_at: string;
-    assignment_id: string; state: string; archive_preserved: number;
+    assignment_id: string; state: string; assignment_record_id: string; assignment_record_type: string;
+    assignment_record_payload: string; archive_preserved: number;
   }>();
 }
 
@@ -133,10 +140,18 @@ function replayResponse(run: NonNullable<Awaited<ReturnType<typeof duplicateRun>
   if (run.input_checksum !== inputChecksum) {
     return Response.json({ error: "This scheduled Daily Operator run already exists with different evidence." }, { status: 409 });
   }
+  const assignmentPayload = parseJson(run.assignment_record_payload);
+  const practiceDayId = run.assignment_record_type === "practice_day" ? run.assignment_record_id : null;
+  const dailyBriefId = practiceDayId
+    ? text(assignmentPayload.dailyBriefId, 80)
+    : run.assignment_record_type === "daily_brief" ? run.assignment_record_id : null;
   return Response.json({
     runId: run.id,
     runKey: dailyOperatorRunKey(run.scheduled_for),
     assignmentId: run.assignment_id,
+    assignmentRecordId: dailyBriefId ?? run.assignment_record_id,
+    practiceDayId,
+    dailyBriefId,
     evidenceRecordId: run.evidence_record_id,
     state: run.state,
     archivePreserved: Boolean(run.archive_preserved),
@@ -338,6 +353,73 @@ export async function POST(request: Request) {
   const statements: D1PreparedStatement[] = [];
   let readingIds: string[] = [];
   let assignmentPayload: Record<string, unknown>;
+  let epochId: string | null = null;
+  let practiceDayId: string | null = null;
+  let dailyBriefId: string | null = null;
+  let assignmentEvidenceRecordId = assignmentRecordId;
+  const curriculum = input.curriculum as CourseFirstCurriculumInput | undefined;
+
+  if (curriculum) {
+    const priorEpochs = await db.prepare(
+      `SELECT id, payload_json FROM lab_records WHERE owner_id = ? AND record_type = 'curriculum_epoch'
+       ORDER BY committed_at ASC, id ASC LIMIT 2`,
+    ).bind(owner).all<{ id: string; payload_json: string }>();
+    const epochs = priorEpochs.results ?? [];
+    const matchingEpoch = epochs.find((row) => text(parseJson(row.payload_json).epochKey, 120) === curriculum.epoch.epochKey);
+    if (epochs.length > 0 && !matchingEpoch) {
+      return Response.json({ error: "A different immutable Curriculum Epoch already exists for this private owner." }, { status: 409 });
+    }
+    if (matchingEpoch && canonicalJson(parseJson(matchingEpoch.payload_json)) !== canonicalJson(curriculum.epoch)) {
+      return Response.json({ error: "This Curriculum Epoch key already exists with different immutable evidence." }, { status: 409 });
+    }
+    epochId = matchingEpoch?.id ?? crypto.randomUUID();
+    practiceDayId = crypto.randomUUID();
+    dailyBriefId = assignmentRecordId;
+    assignmentEvidenceRecordId = practiceDayId;
+    if (!matchingEpoch) {
+      statements.push(insertRecord(db, {
+        id: epochId, owner, recordType: "curriculum_epoch", parentId: null,
+        title: `Course-first curriculum — ${curriculum.epoch.startedLearnerDate}`,
+        payload: curriculum.epoch, now,
+      }));
+      const unfinished = await db.prepare(
+        `SELECT conversation.id, latest.sequence, latest.draft_json
+         FROM lab_conversations conversation
+         JOIN lab_conversation_turns latest ON latest.conversation_id = conversation.id
+           AND latest.owner_id = conversation.owner_id
+           AND latest.sequence = (
+             SELECT MAX(candidate.sequence) FROM lab_conversation_turns candidate
+             WHERE candidate.conversation_id = conversation.id AND candidate.owner_id = conversation.owner_id
+           )
+         WHERE conversation.owner_id = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM lab_conversation_turns terminal
+             WHERE terminal.conversation_id = conversation.id AND terminal.owner_id = conversation.owner_id
+               AND terminal.role = 'system'
+               AND json_extract(terminal.metadata_json, '$.kind') IN ('committed', 'abandoned')
+           )
+         ORDER BY conversation.created_at ASC, conversation.id ASC`,
+      ).bind(owner).all<{ id: string; sequence: number; draft_json: string }>();
+      for (const conversation of unfinished.results ?? []) {
+        statements.push(db.prepare(
+          `INSERT INTO lab_conversation_turns
+           (id, conversation_id, owner_id, sequence, role, visible_text, draft_json, metadata_json, created_at)
+           VALUES (?, ?, ?, ?, 'system', ?, ?, ?, ?)`,
+        ).bind(
+          crypto.randomUUID(), conversation.id, owner, Number(conversation.sequence) + 1,
+          "Conversation archived outside the course-first progression; every original turn remains preserved.",
+          conversation.draft_json,
+          JSON.stringify({
+            kind: "abandoned",
+            phase: "abandoned",
+            archiveReason: "pre_curriculum",
+            curriculumEpochKey: curriculum.epoch.epochKey,
+          }),
+          now,
+        ));
+      }
+    }
+  }
 
   if (state === "ready") {
     const brief = input.assignment.brief as Record<string, unknown> & { readings: Array<Record<string, unknown>> };
@@ -352,9 +434,24 @@ export async function POST(request: Request) {
       readingIds,
       prePublicationGatesPassed: 12,
       immutableBeforeDelivery: true,
+      ...(practiceDayId && epochId ? { practiceDayId, curriculumEpochId: epochId } : {}),
     };
+    if (curriculum && practiceDayId && epochId) {
+      statements.push(insertRecord(db, {
+        id: practiceDayId, owner, recordType: "practice_day", parentId: epochId,
+        title: `Practice Day ${curriculum.practiceDay.curriculumDay} — ${input.assignment.learnerDate}`,
+        payload: {
+          ...curriculum.practiceDay,
+          curriculumEpochId: epochId,
+          dailyBriefId: assignmentRecordId,
+          assignedDate: input.assignment.learnerDate,
+          timezone: input.assignment.timezone,
+        },
+        now,
+      }));
+    }
     statements.push(insertRecord(db, {
-      id: assignmentRecordId, owner, recordType: "daily_brief", parentId: null,
+      id: assignmentRecordId, owner, recordType: "daily_brief", parentId: practiceDayId,
       title: `Daily Brief — ${input.assignment.learnerDate}`, payload: assignmentPayload, now,
     }));
     for (let index = 0; index < brief.readings.length; index += 1) {
@@ -362,7 +459,13 @@ export async function POST(request: Request) {
       statements.push(insertRecord(db, {
         id: readingIds[index], owner, recordType: "reading_record", parentId: assignmentRecordId,
         title: text(reading.title, 180),
-        payload: { ...reading, assignedDate: input.assignment.learnerDate, assignedTimezone: input.assignment.timezone, dailyBriefId: assignmentRecordId },
+        payload: {
+          ...reading,
+          assignedDate: input.assignment.learnerDate,
+          assignedTimezone: input.assignment.timezone,
+          dailyBriefId: assignmentRecordId,
+          ...(practiceDayId && epochId ? { practiceDayId, curriculumEpochId: epochId } : {}),
+        },
         now,
       }));
     }
@@ -400,6 +503,8 @@ export async function POST(request: Request) {
     ).bind(assignmentCommittedEventId, owner, runRecordId, JSON.stringify({
       runKey,
       assignmentRecordId,
+      assignmentEvidenceRecordId,
+      practiceDayId,
       assignmentState: state,
       learnerDate: input.assignment.learnerDate,
       originalPreserved: true,
@@ -413,7 +518,7 @@ export async function POST(request: Request) {
       `INSERT INTO lab_assignments
        (id, owner_id, learner_date, profile_id, automation_run_id, evidence_record_id, state, payload_checksum, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(assignmentId, owner, input.assignment.learnerDate, profile.id, runId, assignmentRecordId, state, assignmentChecksum, now),
+    ).bind(assignmentId, owner, input.assignment.learnerDate, profile.id, runId, assignmentEvidenceRecordId, state, assignmentChecksum, now),
   );
   try {
     await db.batch(statements);
@@ -427,6 +532,7 @@ export async function POST(request: Request) {
   }
   return Response.json({
     runId, runKey, assignmentId, evidenceRecordId: runRecordId, assignmentRecordId,
+    epochId, practiceDayId, dailyBriefId,
     readingIds, state, archivePreserved: false, effectiveStatus: "assignment_committed",
     committedAt: now, idempotent: false,
   }, { status: 201 });

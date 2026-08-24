@@ -71,6 +71,7 @@ const learnerDate = canonicalDate(scheduled, "America/Chicago");
 const futureLearnerDate = canonicalDate(new Date(scheduled.getTime() + 86_400_000), "America/Chicago");
 const scheduledWeekday = parts(scheduled, "America/Chicago").weekday;
 const currentLearnerDate = canonicalDate(new Date(), "America/Chicago");
+const forecastResolutionDate = canonicalDate(new Date(Date.now() + 45 * 86_400_000), "America/Chicago");
 
 await automation("/api/automation/daily", "GET", undefined, 401, "wrong-token");
 const currentRegistration = await lab({
@@ -162,7 +163,73 @@ const readings = lanes.map((lane, index) => ({
   independentFirstPassWithheld: true,
 }));
 
+const preCurriculumDrafts = await Promise.all([
+  json("/api/lab/conversations", {
+    method: "POST",
+    headers: ownerHeaders,
+    body: JSON.stringify({ workflow: "sourcing_lead" }),
+  }, 201),
+  json("/api/lab/conversations", {
+    method: "POST",
+    headers: ownerHeaders,
+    body: JSON.stringify({ workflow: "snapshot_judgment" }),
+  }, 201),
+]);
+assert.equal(preCurriculumDrafts.every((item) => item.conversation.phase === "collecting"), true);
+
 const runInput = {
+  contractVersion: "course_first_v1",
+  curriculum: {
+    epoch: {
+      contractVersion: "course_first_v1",
+      epochKey: `course-first|${learnerDate}`,
+      startedLearnerDate: learnerDate,
+      timezone: "America/Chicago",
+      destination: "Summer 2027 early-stage investing role",
+      breadthRotations: [
+        "AI and data systems",
+        "Industrial and climate systems",
+        "Fintech infrastructure",
+        "Digital health and bio tools",
+        "Enterprise software",
+        "Cybersecurity and digital trust",
+      ],
+      confirmationWeeksPerFinalist: 3,
+      postCycleAllocation: { provisionalFocus: 70, runnerUpAndDisconfirmation: 30 },
+      weekdayMinutes: 105,
+      normalWeekMinutes: 720,
+      calibrationWeekMinutes: 720,
+    },
+    practiceDay: {
+      contractVersion: "course_first_v1",
+      practiceDayKey: `course-first|${learnerDate}|${learnerDate}`,
+      learnerDate,
+      curriculumDay: 1,
+      rotationWeek: 1,
+      phase: "breadth",
+      sector: "AI and data systems",
+      rotationTitle: "AI & Data Systems Rotation",
+      teachingPurpose: "Build conviction in data infrastructure and AI tooling.",
+      whyToday: [
+        "Build judgment on technical depth and defensibility.",
+        "Practice independent sourcing and founder-market-fit reasoning.",
+        "Strengthen falsifiable thinking with one clear forecast.",
+      ],
+      sourcingPrompt: {
+        surface: "Recent accelerator launches and founder product announcements.",
+        hypothesis: "Early AI infrastructure products with workflow pull will show evidence beyond demo novelty.",
+        companyNamesWithheld: true,
+      },
+      checkpoints: [
+        { id: "readings", label: "Read four curated readings", minutes: 55 },
+        { id: "scan_and_judge", label: "Scan three early-stage companies, then choose and judge one", minutes: 25 },
+        { id: "forecast", label: "Commit one falsifiable forecast", minutes: 10 },
+        { id: "recruiting", label: "Complete one small recruiting action", minutes: 10 },
+        { id: "preserve", label: "Review and preserve", minutes: 5 },
+      ],
+      totalMinutes: 105,
+    },
+  },
   scheduledFor,
   profileVersion: currentRegistration.profileVersion,
   notificationIntent: "brief_ready",
@@ -188,6 +255,38 @@ await automation("/api/automation/daily", "POST", {
 const accepted = await automation("/api/automation/daily", "POST", runInput, 201);
 assert.equal(accepted.state, "ready");
 assert.equal(accepted.archivePreserved, false);
+assert.ok(accepted.epochId);
+assert.ok(accepted.practiceDayId);
+assert.ok(accepted.dailyBriefId);
+assert.equal(accepted.assignmentRecordId, accepted.dailyBriefId);
+const linkedForecastPayload = {
+  practiceDayId: accepted.practiceDayId,
+  claim: "At least one observed AI infrastructure workflow will publish a durable usage signal before resolution.",
+  probability: 60,
+  resolutionDate: forecastResolutionDate,
+  supportingEvidence: "The assigned route contains an observed workflow-pull hypothesis, not a supplied company conclusion.",
+  disconfirmingCondition: "No independently discovered company publishes a durable usage signal by resolution.",
+  resolutionSource: "https://example.com/phase3-resolution",
+  timezone: "America/Chicago",
+};
+await lab({
+  operation: "commit_record",
+  recordType: "forecast",
+  title: "Course-first linked forecast",
+  payload: linkedForecastPayload,
+});
+await lab({
+  operation: "commit_record",
+  recordType: "forecast",
+  title: "Cross-owner course-first linked forecast",
+  payload: linkedForecastPayload,
+}, 404, otherHeaders);
+const archivedDrafts = await json("/api/lab/conversations", { headers: ownerHeaders }, 200);
+assert.equal(archivedDrafts.conversations.filter((item) => preCurriculumDrafts.some((draft) => draft.conversation.id === item.id)).every((item) => (
+  item.phase === "abandoned"
+  && item.turns.at(-1).metadata.archiveReason === "pre_curriculum"
+  && item.turns.at(-1).metadata.curriculumEpochKey === `course-first|${learnerDate}`
+)), true);
 const replay = await automation("/api/automation/daily", "POST", runInput, 200);
 assert.equal(replay.idempotent, true);
 await automation("/api/automation/daily", "POST", {
@@ -269,6 +368,13 @@ assert.match(otherToday.error, /No active Lab Profile/);
 const today = await json("/api/lab/assignment/today", { headers: ownerHeaders }, 200);
 if (learnerDate === currentLearnerDate) {
   assert.equal(today.assignment.id, accepted.assignmentId);
+  assert.equal(today.epoch.id, accepted.epochId);
+  assert.equal(today.practiceDay.id, accepted.practiceDayId);
+  assert.equal(today.practiceDay.dailyBriefId, accepted.dailyBriefId);
+  assert.equal(today.progress.readings.completed, 4);
+  assert.equal(today.progress.readings.state, "complete");
+  assert.equal(today.progress.scanAndJudge.state, "not_started");
+  assert.equal(today.progress.forecast.state, "complete");
   assert.equal(today.assignment.brief.readings.length, 4);
   assert.equal(today.assignment.events.some((event) => event.eventType === "learner_response"), true);
   assert.equal(today.assignment.events.some((event) => event.eventType === "source_status"), true);
@@ -276,4 +382,4 @@ if (learnerDate === currentLearnerDate) {
   assert.equal(today.assignment, null);
 }
 
-console.log("Phase 3 API smoke passed: latest-profile enforcement, immutable assignment replay/conflict, four distinct learner responses before terminal completion, deterministic export, archive acknowledgement replay, and owner isolation.");
+console.log("Phase 3 API smoke passed: course-first epoch and Practice Day delivery, pre-curriculum draft archival, derived progress, immutable replay/conflict, deterministic export, and owner isolation.");
