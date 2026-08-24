@@ -219,6 +219,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .work-list article { display: grid; grid-template-columns: minmax(130px, 180px) minmax(0, 1fr) auto; gap: 14px; padding: 14px 16px; background: var(--cream); }
 .work-list span, .work-list time { color: #758078; font-size: 9px; text-transform: uppercase; }
 .work-list strong { font-family: Georgia, serif; font-size: 16px; font-weight: 400; }
+.work-status { margin-top: 22px; }
+.work-status > .eyebrow { display: block; margin-bottom: 8px; }
 .record-delivery { display: grid; gap: 1px; margin-bottom: 28px; border: 1px solid var(--line); background: var(--line); }
 .record-delivery > span { padding: 13px 15px; background: var(--paper-deep); }
 .record-delivery article { display: grid; grid-template-columns: 130px minmax(0, 1fr) auto; gap: 14px; padding: 13px 15px; background: var(--cream); }

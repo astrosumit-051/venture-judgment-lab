@@ -34,3 +34,9 @@ test("routing never follows instructions outside the workflow allowlist", () => 
     message: "I can help you think, draft, or preserve evidence, but I can’t contact anyone, submit anything, delete your record, or bypass review.",
   });
 });
+
+test("evidence language and VC terms are not mistaken for external-action requests", () => {
+  assert.equal(routeConversationIntent("The founder sent me a message with a concrete product update").kind, "clarify");
+  assert.notEqual(routeConversationIntent("Evaluate the post-money valuation in this company screen").kind, "answer");
+  assert.equal(routeConversationIntent("Contact the founder for me").kind, "answer");
+});

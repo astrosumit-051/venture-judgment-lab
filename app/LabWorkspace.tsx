@@ -6,6 +6,7 @@ import {
   CONVERSATION_WORKFLOWS,
   WORKFLOW_CONTRACTS,
   type ConversationWorkflow,
+  type LearningConversation,
 } from "./conversation";
 import type { TodayAssignment, TodayAssignmentResponse } from "./DailyAssignmentView";
 
@@ -54,7 +55,7 @@ const STRUCTURED_VIEW: Record<ConversationWorkflow, LegacyView> = {
 
 function formatDate(value: string, timezone: string, withTime = false) {
   return new Intl.DateTimeFormat("en-US", withTime
-    ? { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }
+    ? { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: timezone }
     : { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: timezone }).format(new Date(withTime ? value : `${value}T12:00:00-05:00`));
 }
 
@@ -73,7 +74,10 @@ export function LabWorkspace({ displayName, initialView = "today" }: { displayNa
   const [assignmentLoading, setAssignmentLoading] = useState(true);
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [records, setRecords] = useState<LabRecord[]>([]);
+  const [workConversations, setWorkConversations] = useState<LearningConversation[]>([]);
   const [workLoading, setWorkLoading] = useState(false);
+  const [workError, setWorkError] = useState("");
+  const [resumeConversationId, setResumeConversationId] = useState<string | null>(null);
   const [assignmentHistory, setAssignmentHistory] = useState<AssignmentHistoryItem[]>([]);
   const [search, setSearch] = useState("");
 
@@ -107,12 +111,22 @@ export function LabWorkspace({ displayName, initialView = "today" }: { displayNa
   }
 
   async function loadWork() {
-    setWorkLoading(true);
+    setWorkLoading(true); setWorkError("");
     try {
       const params = new URLSearchParams({ types: WORK_RECORD_TYPES.join(","), limit: "60" });
-      const response = await fetch(`/api/lab/records?${params}`, { cache: "no-store" });
-      const result = await response.json() as { records?: LabRecord[] };
-      if (response.ok) setRecords(result.records ?? []);
+      const [recordsResponse, conversationsResponse] = await Promise.all([
+        fetch(`/api/lab/records?${params}`, { cache: "no-store" }),
+        fetch("/api/lab/conversations", { cache: "no-store" }),
+      ]);
+      const recordsResult = await recordsResponse.json() as { records?: LabRecord[]; error?: string };
+      const conversationsResult = await conversationsResponse.json() as { conversations?: LearningConversation[]; error?: string };
+      if (!recordsResponse.ok) throw new Error(recordsResult.error ?? "Your current work could not be loaded.");
+      if (!conversationsResponse.ok) throw new Error(conversationsResult.error ?? "Your conversation drafts could not be loaded.");
+      setRecords(recordsResult.records ?? []);
+      setWorkConversations((conversationsResult.conversations ?? []).filter((item) => item.phase === "collecting" || item.phase === "review_ready"));
+    } catch (caught) {
+      setRecords([]); setWorkConversations([]);
+      setWorkError(caught instanceof Error ? caught.message : "Your current work could not be loaded.");
     } finally { setWorkLoading(false); }
   }
 
@@ -138,13 +152,21 @@ export function LabWorkspace({ displayName, initialView = "today" }: { displayNa
       return `${contract.label} ${contract.description}`.toLowerCase().includes(search.trim().toLowerCase());
     }),
   })).filter((group) => group.workflows.length), [search]);
+  const upcomingRecords = useMemo(() => records.filter((record) => {
+    const date = ["nextActionDue", "dueDate", "resolutionDate", "endDate"].map((key) => record.payload[key]).find((value) => typeof value === "string");
+    return typeof date === "string" && date >= learnerDate;
+  }).slice(0, 8), [learnerDate, records]);
 
   function navigate(destination: PrimaryDestination) {
-    setLegacyView(null); setDirectWorkflow(null); setView(destination);
+    setLegacyView(null); setDirectWorkflow(null); setResumeConversationId(null); setView(destination);
   }
 
   function talkThrough(workflow: ConversationWorkflow) {
     setDirectWorkflow(workflow); setLegacyView(null); setView("today");
+  }
+
+  function resumeConversation(id: string) {
+    setResumeConversationId(id); setDirectWorkflow(null); setLegacyView(null); setView("today");
   }
 
   if (legacyView) return <Suspense fallback={<div className="lab-loading" role="status">Opening advanced entry…</div>}>
@@ -161,13 +183,16 @@ export function LabWorkspace({ displayName, initialView = "today" }: { displayNa
       <header className="topbar"><div><span className="eyebrow">{formatDate(learnerDate, timezone)}</span><h1>{view === "today" ? `Good morning, ${displayName}.` : PRIMARY_NAV.find((item) => item.id === view)?.label}</h1></div><button className="mode-chip" onClick={() => navigate("more")}><span>{bootstrap?.profile?.practiceMode ?? "Local Lab"}</span><strong>{bootstrap?.counts.records ?? 0}</strong></button></header>
 
       {view === "today" && <section className="view chat-first-view">
-        <Suspense fallback={<div className="lab-loading" role="status">Opening Luna…</div>}><ConversationTeacher key={directWorkflow ?? "luna-home"} initialWorkflow={directWorkflow ?? "snapshot_judgment"} directStart={Boolean(directWorkflow)} onCommitted={loadWork} /></Suspense>
+        <Suspense fallback={<div className="lab-loading" role="status">Opening Luna…</div>}><ConversationTeacher key={resumeConversationId ?? directWorkflow ?? "luna-home"} initialWorkflow={directWorkflow ?? "snapshot_judgment"} initialConversationId={resumeConversationId} directStart={Boolean(directWorkflow)} onCommitted={loadWork} /></Suspense>
         <aside className="today-context"><span className="eyebrow">Today’s context</span>{assignmentLoading ? <p>Checking today’s work…</p> : assignmentError ? <><strong>No daily assignment yet</strong><p>{assignmentError}</p><button className="text-button" onClick={() => navigate("more")}>Open setup and advanced tools →</button></> : assignment ? <><strong>{assignment.state === "ready" ? "Daily Brief ready" : assignment.state.replaceAll("_", " ")}</strong><p>{assignment.brief ? `${assignment.brief.readings.length} readings · ${assignment.brief.totalMinutes} minutes` : assignment.nextAction}</p><button className="text-button" onClick={() => { setLegacyView("brief"); }}>Open the Brief →</button></> : <><strong>No scheduled work</strong><p>Ask Luna what to do next or choose a practice mode in More.</p></>}</aside>
       </section>}
 
       {view === "work" && <section className="view"><div className="intro-row"><div><span className="eyebrow coral">Work in motion</span><h2>Continue by status, not by feature.</h2></div><p>Your assignment and recently preserved work are gathered here. Luna remains the default entry.</p></div>
-        <div className="work-grid"><article className="work-primary"><span className="eyebrow">Daily practice</span>{assignmentError ? <><h3>Schedule not connected</h3><p>{assignmentError}</p><button className="primary" onClick={() => navigate("today")}>Ask Luna what to do</button></> : <Suspense fallback={<p>Opening today’s assignment…</p>}><DailyAssignmentView assignment={assignment} loading={assignmentLoading} error="" variant="today" onOpenBrief={() => setLegacyView("brief")} onRetry={loadToday} /></Suspense>}</article><article className="work-summary"><span className="eyebrow">Recent preserved work</span><h3>{workLoading ? "Opening…" : `${records.length} recent records`}</h3><p>Start new work through Luna; inspect immutable evidence in Record.</p><button className="text-button" onClick={() => navigate("record")}>Open Private Learning Record →</button></article></div>
-        <div className="work-list">{records.slice(0, 12).map((record) => <article key={record.id}><span>{recordLabel(record.recordType)}</span><strong>{record.title}</strong><time>{formatDate(record.committedAt, timezone, true)}</time></article>)}</div>
+        {workError && <div className="conversation-error" role="alert"><span>{workError}</span><button onClick={() => void loadWork()}>Try again</button></div>}
+        <div className="work-grid"><article className="work-primary"><span className="eyebrow">Daily practice</span>{assignmentError ? <><h3>Schedule not connected</h3><p>{assignmentError}</p><button className="primary" onClick={() => navigate("today")}>Ask Luna what to do</button></> : <Suspense fallback={<p>Opening today’s assignment…</p>}><DailyAssignmentView assignment={assignment} loading={assignmentLoading} error="" variant="today" onOpenBrief={() => setLegacyView("brief")} onRetry={loadToday} /></Suspense>}</article><article className="work-summary"><span className="eyebrow">Continue</span><h3>{workLoading ? "Opening…" : `${workConversations.length} active drafts`}</h3><p>Resume a private conversation exactly where you left it.</p>{workConversations[0] ? <button className="text-button" onClick={() => resumeConversation(workConversations[0].id)}>Resume latest draft →</button> : <button className="text-button" onClick={() => navigate("today")}>Start with Luna →</button>}</article></div>
+        {workConversations.length > 0 && <section className="work-status"><span className="eyebrow">Continue</span><div className="work-list">{workConversations.map((item) => <article key={item.id}><span>{item.phase.replaceAll("_", " ")}</span><strong>{item.title}</strong><button className="text-button" onClick={() => resumeConversation(item.id)}>Resume →</button></article>)}</div></section>}
+        {upcomingRecords.length > 0 && <section className="work-status"><span className="eyebrow">Upcoming</span><div className="work-list">{upcomingRecords.map((record) => <article key={record.id}><span>{recordLabel(record.recordType)}</span><strong>{record.title}</strong><time>{String(record.payload.nextActionDue ?? record.payload.dueDate ?? record.payload.resolutionDate ?? record.payload.endDate)}</time></article>)}</div></section>}
+        <section className="work-status"><span className="eyebrow">Recent preserved reference</span><div className="work-list">{records.slice(0, 12).map((record) => <article key={record.id}><span>{recordLabel(record.recordType)}</span><strong>{record.title}</strong><time>{formatDate(record.committedAt, timezone, true)}</time></article>)}</div></section>
       </section>}
 
       {view === "record" && <section className="view"><div className="intro-row"><div><span className="eyebrow coral">Private Learning Record</span><h2>Originals stay. Updates accumulate.</h2></div><p>Search committed evidence, transcripts, and assignment outcomes without rewriting history.</p></div>{assignmentHistory.length > 0 && <section className="record-delivery"><span className="eyebrow">Recent assignment outcomes</span>{assignmentHistory.slice(0, 4).map((item) => <article key={item.id}><time>{item.learnerDate}</time><strong>{item.evidence.title}</strong><span>{item.state.replaceAll("_", " ")} · {item.archive.status}</span></article>)}</section>}<Suspense fallback={<div className="lab-loading">Opening your record…</div>}><HistoryView /></Suspense></section>}

@@ -12,7 +12,11 @@ const [labApp, labWorkspace, advancedForms, teacher, conversationHistory, provid
   readFile(new URL("../db/runtime.ts", import.meta.url), "utf8"),
 ]);
 const historyRoute = await readFile(new URL("../app/api/lab/history/route.ts", import.meta.url), "utf8");
-const commitRoute = await readFile(new URL("../app/api/lab/conversations/[conversationId]/commit/route.ts", import.meta.url), "utf8");
+const [commitRoute, createRoute, intentRoute] = await Promise.all([
+  readFile(new URL("../app/api/lab/conversations/[conversationId]/commit/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/lab/conversations/route.ts", import.meta.url), "utf8"),
+  readFile(new URL("../app/api/lab/conversations/route/route.ts", import.meta.url), "utf8"),
+]);
 const labSurface = `${labApp}\n${labWorkspace}\n${advancedForms}`;
 
 test("Today makes conversation primary while every structured workflow remains available", () => {
@@ -40,6 +44,7 @@ test("the learner sees one-question conversation, structured review, and explici
   assert.match(teacher, /Preserve/);
   assert.match(teacher, /that isn’t what I meant/);
   assert.match(teacher, /Nothing below is permanent yet/);
+  assert.match(teacher, /start\(candidate, routeMessage/);
   assert.match(teacher, /!\["operation", "recordType"\]\.includes/);
   assert.match(conversationHistory, /Full visible transcripts/);
   assert.match(conversationHistory, /Hidden model reasoning is never stored/);
@@ -52,6 +57,9 @@ test("the provider boundary is server-only, bounded, and prohibits pre-commit an
   assert.match(provider, /Do not supply an investment thesis/);
   assert.match(provider, /Never invent/);
   assert.match(provider, /Never reveal chain-of-thought/);
+  assert.match(provider, /classifyConversationIntent/);
+  assert.match(intentRoute, /recentRecords/);
+  assert.match(intentRoute, /learner_date = \?/);
   assert.doesNotMatch(teacher, /LAB_AI_API_KEY/);
 });
 
@@ -62,6 +70,7 @@ test("D1 initializes append-only conversation storage and sequence indexes", () 
   assert.match(runtime, /PRAGMA optimize/);
   assert.match(runtime, /lab_conversation_commits/);
   assert.match(commitRoute, /reserveConversationCommit/);
+  assert.match(createRoute, /db\.batch/);
 });
 
 test("History only nests canonical Reading Records", () => {

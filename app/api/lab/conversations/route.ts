@@ -41,18 +41,19 @@ export async function POST(request: Request) {
   const title = `${contract.label} conversation · ${now.slice(0, 10)}`;
   const draft = emptyConversationDraft(body.workflow);
   const db = await ensureLabSchema();
-  await insertConversation(db, { id, owner, workflow: body.workflow, title, now }).run();
+  const firstTurn = openingMessage
+    ? { role: "learner" as const, visibleText: openingMessage, metadata: { kind: "opening_intent" } }
+    : { role: "teacher" as const, visibleText: contract.initialQuestion, metadata: { kind: "started", phase: "collecting" } };
+  await db.batch([
+    insertConversation(db, { id, owner, workflow: body.workflow, title, now }),
+    insertConversationTurn(db, {
+      id: crypto.randomUUID(), conversationId: id, owner, sequence: 1,
+      role: firstTurn.role, visibleText: firstTurn.visibleText, draft, metadata: firstTurn.metadata, now,
+    }),
+  ]);
   if (!openingMessage) {
-    await insertConversationTurn(db, {
-      id: crypto.randomUUID(), conversationId: id, owner, sequence: 1, role: "teacher",
-      visibleText: contract.initialQuestion, draft, metadata: { kind: "started", phase: "collecting" }, now,
-    }).run();
     return Response.json({ conversation: await loadConversation(db, owner, id) }, { status: 201 });
   }
-  await insertConversationTurn(db, {
-    id: crypto.randomUUID(), conversationId: id, owner, sequence: 1, role: "learner",
-    visibleText: openingMessage, draft, metadata: { kind: "opening_intent" }, now,
-  }).run();
   try {
     return Response.json({ conversation: await generateTeacherTurn(db, owner, id) }, { status: 201 });
   } catch (error) {

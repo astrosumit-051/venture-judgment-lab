@@ -4,8 +4,11 @@ import {
 } from "./conversation.ts";
 
 export type ConversationRouteContext = {
+  learnerDate?: string;
   hasAssignment?: boolean;
   hasActiveConversation?: boolean;
+  unfinishedWorkflows?: ConversationWorkflow[];
+  recentRecords?: Array<{ recordType: string; title: string }>;
 };
 
 export type ConversationRouteResult =
@@ -32,7 +35,7 @@ type RouteRule = {
   explanation: string;
 };
 
-const EXTERNAL_ACTION_PATTERN = /\b(email|message|contact|submit|apply for me|send|publish|post|delete|erase|bypass|ignore (?:the|all) rules?)\b/i;
+const EXTERNAL_ACTION_PATTERN = /\b(?:apply for me|(?:send|email|message|contact|submit|publish|post|delete|erase)\s+(?:this|that|the|a|an|my|to|for|application|founder|firm|record|message|email|post)\b|bypass|ignore (?:the|all) rules?)\b/i;
 
 const ROUTE_RULES: RouteRule[] = [
   { workflow: "calibration_review", pattern: /\b(calibrat|score|brier|resolve).*(forecast|prediction)|\blast month(?:'s)? predictions?\b/i, explanation: "I’ll help compare the original judgment with later evidence and change a future decision rule." },

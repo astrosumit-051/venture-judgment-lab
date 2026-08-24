@@ -44,10 +44,12 @@ function DraftSummary({ value, depth = 0 }: { value: unknown; depth?: number }) 
 
 export function ConversationTeacher({
   initialWorkflow = "snapshot_judgment",
+  initialConversationId,
   directStart = false,
   onCommitted,
 }: {
   initialWorkflow?: ConversationWorkflow;
+  initialConversationId?: string | null;
   directStart?: boolean;
   onCommitted?: () => void | Promise<void>;
 }) {
@@ -75,6 +77,7 @@ export function ConversationTeacher({
     const loaded = result.conversations ?? [];
     setConversations(loaded);
     if (conversation) setConversation(loaded.find((item) => item.id === conversation.id) ?? conversation);
+    else if (initialConversationId) setConversation(loaded.find((item) => item.id === initialConversationId) ?? null);
   }
 
   useEffect(() => {
@@ -211,7 +214,7 @@ export function ConversationTeacher({
     {error && <div className="conversation-error" role="alert">{error}</div>}
     {directStart && <div className="route-reply direct-capability"><span className="eyebrow coral">Ready to use</span><p><strong>{WORKFLOW_CONTRACTS[workflow].label}</strong> · {WORKFLOW_CONTRACTS[workflow].description}</p><button className="primary" disabled={busy} onClick={() => void start(workflow)}>{busy ? "Opening…" : "Start this conversation"}</button></div>}
     <form className="intent-composer" onSubmit={(event) => void routeIntent(event)}><label htmlFor="luna-intent"><span>Talk to Luna</span><textarea id="luna-intent" rows={5} value={routeMessage} onChange={(event) => setRouteMessage(event.target.value)} placeholder="Try: I found a startup at demo day, help me judge a company, or what should I do today?" /></label><button className="primary" disabled={busy || !routeMessage.trim()}>{busy ? "Finding the right path…" : "Continue"} <span>→</span></button><small>Luna can organize and preserve your reasoning. It cannot contact anyone or submit anything.</small></form>
-    {routeReply && <div className="route-reply" role="status"><span className="eyebrow coral">One quick clarification</span><p>{routeReply}</p>{routeCandidates.length > 0 && <div>{routeCandidates.map((candidate) => <button key={candidate} onClick={() => void start(candidate)}><strong>{WORKFLOW_CONTRACTS[candidate].label}</strong><small>{WORKFLOW_CONTRACTS[candidate].description}</small></button>)}</div>}</div>}
+    {routeReply && <div className="route-reply" role="status"><span className="eyebrow coral">One quick clarification</span><p>{routeReply}</p>{routeCandidates.length > 0 && <div>{routeCandidates.map((candidate) => <button key={candidate} onClick={() => void start(candidate, routeMessage, `You chose ${WORKFLOW_CONTRACTS[candidate].label} after Luna asked for clarification.`)}><strong>{WORKFLOW_CONTRACTS[candidate].label}</strong><small>{WORKFLOW_CONTRACTS[candidate].description}</small></button>)}</div>}</div>}
     <div className="conversation-prompts" aria-label="Example things to ask"><button onClick={() => setRouteMessage("What should I do today?")}>What should I do today?</button><button onClick={() => setRouteMessage("I found a startup and want to preserve how I discovered it")}>I found a company</button><button onClick={() => setRouteMessage("Help me make a falsifiable forecast")}>Make a forecast</button></div>
     {activeConversations.length > 0 && <div className="conversation-resume"><span className="eyebrow">Continue where you left off</span>{activeConversations.map((item) => <button key={item.id} onClick={() => setConversation(item)}><span>{WORKFLOW_CONTRACTS[item.workflow].label}</span><small>{item.phase.replaceAll("_", " ")} · {new Date(item.createdAt).toLocaleDateString()}</small></button>)}</div>}
   </section>;
