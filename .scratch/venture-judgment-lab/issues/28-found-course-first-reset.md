@@ -1,7 +1,7 @@
 # Found the course-first Lab reset
 
 Type: task
-Status: claimed
+Status: resolved
 Parent: ../map.md
 
 ## Question
@@ -53,3 +53,26 @@ Day 1, notify the learner, or change the hosted Site.
   compare. The server now rejects supplied/backdated Forecast dates, derives
   `committedLearnerDate`, and permits the link only on the active Practice Day
   in its preserved timezone.
+- 2026-08-24: Resolved after `npm run local:verify` passed with 73 tests, the
+  isolated course-first API journey proved both withheld and successful
+  completion, and final correctness plus scope reviews found no actionable
+  issue in `3222130...08b9a1a`.
+
+## Answer
+
+The local Lab now has the immutable course-first foundation. A versioned Daily
+Operator can establish one owner-bound Curriculum Epoch, append eligible-date
+Practice Days, nest the existing four-reading Daily Brief below each day, and
+project `{ epoch, practiceDay, assignment, progress }` without changing legacy
+v1 assignment readability. First-epoch creation preserves unfinished prior
+conversations by appending a `pre_curriculum` archive boundary rather than
+deleting or rewriting them.
+
+The contracts enforce the six rotations, two evidence-qualified three-week
+confirmation sprints, exact 720-minute week variants, 70/30 post-cycle rule,
+and no-catch-up-debt calendar. Daily progress counts only effective Independent
+discovery, owns exactly three DB-slotted companies and one DB-unique Snapshot,
+binds dated evidence and Forecasts to the active Practice Day, and withholds
+Preserve until readings, company judgment, Forecast, and recruiting evidence
+all exist. The selected Today redesign and actual Day 1 epoch remain the next
+ticket; hosted data and external systems were untouched.
