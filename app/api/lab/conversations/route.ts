@@ -10,6 +10,7 @@ import {
   listConversations,
   loadConversation,
 } from "@/app/conversationPersistence";
+import { generateTeacherTurn } from "@/app/conversationResponse";
 import { ensureLabSchema } from "@/db/runtime";
 
 export const dynamic = "force-dynamic";
@@ -34,17 +35,32 @@ export async function POST(request: Request) {
     return Response.json({ error: "Choose a supported Lab conversation." }, { status: 400 });
   }
   const contract = WORKFLOW_CONTRACTS[body.workflow];
+  const openingMessage = typeof body.openingMessage === "string" ? body.openingMessage.trim().slice(0, 10_000) : "";
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   const title = `${contract.label} conversation · ${now.slice(0, 10)}`;
   const draft = emptyConversationDraft(body.workflow);
   const db = await ensureLabSchema();
-  await db.batch([
-    insertConversation(db, { id, owner, workflow: body.workflow, title, now }),
-    insertConversationTurn(db, {
+  await insertConversation(db, { id, owner, workflow: body.workflow, title, now }).run();
+  if (!openingMessage) {
+    await insertConversationTurn(db, {
       id: crypto.randomUUID(), conversationId: id, owner, sequence: 1, role: "teacher",
       visibleText: contract.initialQuestion, draft, metadata: { kind: "started", phase: "collecting" }, now,
-    }),
-  ]);
-  return Response.json({ conversation: await loadConversation(db, owner, id) }, { status: 201 });
+    }).run();
+    return Response.json({ conversation: await loadConversation(db, owner, id) }, { status: 201 });
+  }
+  await insertConversationTurn(db, {
+    id: crypto.randomUUID(), conversationId: id, owner, sequence: 1, role: "learner",
+    visibleText: openingMessage, draft, metadata: { kind: "opening_intent" }, now,
+  }).run();
+  try {
+    return Response.json({ conversation: await generateTeacherTurn(db, owner, id) }, { status: 201 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Luna is temporarily unavailable.";
+    return Response.json({
+      error: /preserv/i.test(message) ? message : `${message} Your opening thought remains preserved.`,
+      preserved: true,
+      conversation: await loadConversation(db, owner, id),
+    }, { status: 503 });
+  }
 }

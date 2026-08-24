@@ -4,15 +4,16 @@ import test from "node:test";
 
 const labApp = await readFile(new URL("../app/LabApp.tsx", import.meta.url), "utf8");
 const labWorkspace = await readFile(new URL("../app/LabWorkspace.tsx", import.meta.url), "utf8");
-const labSurface = `${labApp}\n${labWorkspace}`;
+const advancedForms = await readFile(new URL("../app/AdvancedFormsView.tsx", import.meta.url), "utf8");
+const labSurface = `${labApp}\n${labWorkspace}\n${advancedForms}`;
 const assignmentView = await readFile(new URL("../app/DailyAssignmentView.tsx", import.meta.url), "utf8");
 const assignmentEventView = await readFile(new URL("../app/AssignmentEventView.tsx", import.meta.url), "utf8");
 
 test("Today and Brief read the authenticated daily assignment without a static Brief fallback", () => {
   assert.doesNotMatch(labApp, /import\s+\{\s*dailyBrief\s*\}/);
-  assert.match(labApp, /fetch\("\/api\/lab\/assignment\/today"/);
-  assert.match(labApp, /<DailyAssignmentView/);
-  assert.match(labWorkspace, /onAppendEvent=\{appendAssignmentEvent\}/);
+  assert.match(labWorkspace, /fetch\("\/api\/lab\/assignment\/today"/);
+  assert.match(labWorkspace, /<DailyAssignmentView/);
+  assert.match(advancedForms, /onAppendEvent=\{appendAssignmentEvent\}/);
 });
 
 test("the assignment view names every learner-visible lifecycle state", () => {
@@ -47,8 +48,7 @@ test("completion requires one learner response overlay for each of four current 
 });
 
 test("History exposes the owner-scoped Daily Assignment and archive ledger", () => {
-  assert.match(labSurface, /Daily delivery ledger/);
-  assert.match(labSurface, /assignmentHistory\.map/);
-  assert.match(labSurface, /Archive preserved/);
-  assert.match(labSurface, /Archive pending/);
+  assert.match(labSurface, /Recent assignment outcomes/);
+  assert.match(labSurface, /assignmentHistory\.slice/);
+  assert.match(labSurface, /item\.archive\.status/);
 });

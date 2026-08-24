@@ -1,168 +1,178 @@
 "use client";
 
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { dateInTimeZone } from "./calibration";
-import { DailyAssignmentView, type TodayAssignment, type TodayAssignmentResponse } from "./DailyAssignmentView";
-import type { ConversationWorkflow } from "./conversation";
+import {
+  CONVERSATION_WORKFLOWS,
+  WORKFLOW_CONTRACTS,
+  type ConversationWorkflow,
+} from "./conversation";
+import type { TodayAssignment, TodayAssignmentResponse } from "./DailyAssignmentView";
 
 const AdvancedFormsView = lazy(() => import("./AdvancedFormsView").then((module) => ({ default: module.AdvancedFormsView })));
-const TeacherSurface = lazy(() => import("./TeacherSurface").then((module) => ({ default: module.ConversationTeacherSurface })));
-const TeacherEntrySurface = lazy(() => import("./TeacherEntrySurface").then((module) => ({ default: module.TeacherEntrySurface })));
-const TeacherLauncherSurface = lazy(() => import("./TeacherEntrySurface").then((module) => ({ default: module.TeacherLauncherSurface })));
-const SourcingView = lazy(() => import("./SourcingView").then((module) => ({ default: module.SourcingView })));
-const RecruitingView = lazy(() => import("./RecruitingView").then((module) => ({ default: module.RecruitingView })));
-const DiligenceView = lazy(() => import("./DiligenceView").then((module) => ({ default: module.DiligenceView })));
-const CoachView = lazy(() => import("./CoachView").then((module) => ({ default: module.CoachView })));
+const ConversationTeacher = lazy(() => import("./ConversationTeacher").then((module) => ({ default: module.ConversationTeacher })));
+const DailyAssignmentView = lazy(() => import("./DailyAssignmentView").then((module) => ({ default: module.DailyAssignmentView })));
 const HistoryView = lazy(() => import("./HistoryView").then((module) => ({ default: module.HistoryView })));
 
-export type View = "today" | "teacher" | "brief" | "source" | "recruit" | "snapshot" | "forecast" | "map" | "founder" | "underwrite" | "diligence" | "coach" | "calibrate" | "plan" | "history";
+export type PrimaryDestination = "today" | "work" | "record" | "more";
+export type LegacyView = "brief" | "source" | "recruit" | "snapshot" | "forecast" | "map" | "founder" | "underwrite" | "diligence" | "coach" | "calibrate" | "plan" | "history";
+export type View = PrimaryDestination | LegacyView;
 
-type LabRecord = { id: string; recordType: string; parentId: string | null; title: string; payload: Record<string, unknown>; committedAt: string; createdAt: string };
-type LabEvent = { id: string; recordId: string; eventType: string; eventData: Record<string, unknown>; occurredAt: string; createdAt: string };
-type LabData = { records: LabRecord[]; events: LabEvent[]; nextCursor?: string | null };
-type AssignmentHistoryItem = {
-  id: string; learnerDate: string; state: string; createdAt: string;
-  evidence: { id: string; title: string };
-  profile: { version: string; timezone: string; practiceMode: string };
-  run: { id: string; scheduledFor: string; notificationIntent: string; evidenceRecordId: string };
-  archive: { status: "preserved" | "pending"; preservedAt: string | null };
-};
+type LabRecord = { id: string; recordType: string; title: string; payload: Record<string, unknown>; committedAt: string };
+type Bootstrap = { counts: { records: number; events: number; conversations: number }; profile: { practiceMode: string } | null };
+type AssignmentHistoryItem = { id: string; learnerDate: string; state: string; evidence: { title: string }; profile: { practiceMode: string }; archive: { status: "preserved" | "pending" } };
 
 const DEFAULT_TIMEZONE = "America/Chicago";
-const advancedFormViews = new Set<View>(["snapshot", "forecast", "map", "founder", "underwrite", "calibrate", "plan"]);
-const navItems: Array<{ id: View; key: string; label: string; hint: string }> = [
-  { id: "today", key: "T", label: "Today", hint: "The next judgment" }, { id: "teacher", key: "AI", label: "Teacher", hint: "Talk, then preserve" },
-  { id: "brief", key: "B", label: "Brief", hint: "Four real readings" }, { id: "source", key: "D", label: "Sourcing", hint: "Discover companies early" },
-  { id: "recruit", key: "R", label: "Recruit", hint: "Count real outcomes" }, { id: "snapshot", key: "S", label: "Snapshot", hint: "Lock the first pass" },
-  { id: "forecast", key: "F", label: "Forecast", hint: "Put odds on it" }, { id: "map", key: "M", label: "2nd Order", hint: "Trace consequences" },
-  { id: "founder", key: "E", label: "Founder", hint: "Observe behavior" }, { id: "underwrite", key: "U", label: "Underwrite", hint: "Test the crux" },
-  { id: "diligence", key: "L", label: "Diligence", hint: "Earn and defend the memo" }, { id: "coach", key: "J", label: "Coach", hint: "Diagnose after commitment" },
-  { id: "calibrate", key: "C", label: "Calibrate", hint: "Score prior judgment" }, { id: "plan", key: "P", label: "Practice", hint: "Choose the week mode" },
-  { id: "history", key: "H", label: "History", hint: "Nothing rewritten" },
+const PRIMARY_NAV: Array<{ id: PrimaryDestination; key: string; label: string; hint: string }> = [
+  { id: "today", key: "T", label: "Today", hint: "Talk through the next step" },
+  { id: "work", key: "W", label: "Work", hint: "Active practice and drafts" },
+  { id: "record", key: "R", label: "Record", hint: "Search what is preserved" },
+  { id: "more", key: "M", label: "More", hint: "Tools and advanced entry" },
 ];
-const viewWorkflows: Partial<Record<View, ConversationWorkflow>> = { source: "sourcing_lead", recruit: "recruiting_opportunity", diligence: "diligence_stage", coach: "coach_request" };
-const viewRecordTypes: Partial<Record<View, string[]>> = {
-  source: ["sourcing_experiment", "sourcing_lead", "snapshot_judgment", "weekly_underwrite"],
-  recruit: ["recruiting_opportunity", "opportunity_observation", "opportunity_monitor_run", "opportunity_monitor_registration", "recruiting_interaction", "application_attempt", "interview_practice", "portfolio_candidate", "snapshot_judgment", "weekly_underwrite", "forecast", "second_order_map", "founder_evidence_review", "diligence_stage"],
-  diligence: ["snapshot_judgment", "weekly_underwrite", "diligence_case", "diligence_stage"],
-  coach: ["snapshot_judgment", "weekly_underwrite", "forecast", "second_order_map", "founder_evidence_review", "diligence_stage", "coach_request", "coach_feedback", "revision_attempt", "mastery_evidence"],
+
+const WORK_RECORD_TYPES = [
+  "daily_brief", "reading_record", "sourcing_experiment", "sourcing_lead", "recruiting_opportunity",
+  "application_attempt", "interview_practice", "snapshot_judgment", "forecast", "second_order_map",
+  "founder_evidence_review", "weekly_underwrite", "diligence_case", "diligence_stage", "coach_request",
+  "coach_feedback", "revision_attempt", "calibration_review", "weekly_plan",
+];
+
+const CAPABILITY_GROUPS: Array<{ label: string; workflows: ConversationWorkflow[] }> = [
+  { label: "Today and reflection", workflows: ["reading_response", "history_update", "weekly_plan"] },
+  { label: "Company judgment", workflows: ["snapshot_judgment", "forecast", "second_order_map", "founder_evidence_review", "weekly_underwrite", "diligence_case", "diligence_stage"] },
+  { label: "Sourcing and recruiting", workflows: ["sourcing_experiment", "sourcing_lead", "sourcing_progress", "recruiting_opportunity", "recruiting_evidence"] },
+  { label: "Improve judgment", workflows: ["coach_request", "revision_attempt", "calibration_review"] },
+];
+
+const STRUCTURED_VIEW: Record<ConversationWorkflow, LegacyView> = {
+  reading_response: "brief", history_update: "history", sourcing_experiment: "source", sourcing_lead: "source",
+  sourcing_progress: "source", recruiting_opportunity: "recruit", recruiting_evidence: "recruit",
+  snapshot_judgment: "snapshot", forecast: "forecast", second_order_map: "map", founder_evidence_review: "founder",
+  weekly_underwrite: "underwrite", diligence_case: "diligence", diligence_stage: "diligence", coach_request: "coach",
+  revision_attempt: "coach", calibration_review: "calibrate", weekly_plan: "plan",
 };
 
-function formatDate(value: string, timezone: string) {
-  return new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: timezone }).format(new Date(`${value}T12:00:00-05:00`));
+function formatDate(value: string, timezone: string, withTime = false) {
+  return new Intl.DateTimeFormat("en-US", withTime
+    ? { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }
+    : { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: timezone }).format(new Date(withTime ? value : `${value}T12:00:00-05:00`));
 }
-function formatTime(value: string) {
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
+
+function recordLabel(value: string) {
+  return value.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
 }
 
 export function LabWorkspace({ displayName, initialView = "today" }: { displayName: string; initialView?: View }) {
-  const [view, setView] = useState<View>(initialView);
-  const [teacherWorkflow, setTeacherWorkflow] = useState<ConversationWorkflow>("snapshot_judgment");
-  const [advancedEntryVisible, setAdvancedEntryVisible] = useState(false);
-  const [data, setData] = useState<LabData>({ records: [], events: [] });
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [view, setView] = useState<PrimaryDestination>(["today", "work", "record", "more"].includes(initialView) ? initialView as PrimaryDestination : "today");
+  const [legacyView, setLegacyView] = useState<LegacyView | null>(["today", "work", "record", "more"].includes(initialView) ? null : initialView as LegacyView);
+  const [directWorkflow, setDirectWorkflow] = useState<ConversationWorkflow | null>(null);
   const [assignment, setAssignment] = useState<TodayAssignment | null>(null);
   const [learnerDate, setLearnerDate] = useState(dateInTimeZone(new Date(), DEFAULT_TIMEZONE));
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
   const [assignmentError, setAssignmentError] = useState("");
+  const [assignmentLoading, setAssignmentLoading] = useState(true);
+  const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
+  const [records, setRecords] = useState<LabRecord[]>([]);
+  const [workLoading, setWorkLoading] = useState(false);
   const [assignmentHistory, setAssignmentHistory] = useState<AssignmentHistoryItem[]>([]);
-  const [assignmentHistoryError, setAssignmentHistoryError] = useState("");
-  const viewCache = useRef(new Map<string, LabData>());
+  const [search, setSearch] = useState("");
 
-  async function loadRecords(targetView: View) {
-    const types = viewRecordTypes[targetView] ?? [];
-    if (!types.length) { setData({ records: [], events: [] }); setLoading(false); return; }
-    const key = types.join(",");
-    const cached = viewCache.current.get(key);
-    if (cached) { setData(cached); setLoading(false); return; }
-    setLoading(true);
+  async function loadToday() {
+    setAssignmentLoading(true); setAssignmentError("");
     try {
-      const loaded: LabData = { records: [], events: [] };
-      let cursor: string | null = null;
-      do {
-        const params = new URLSearchParams({ types: key, limit: "200", includeEvents: "1" });
-        if (cursor) params.set("cursor", cursor);
-        const response = await fetch(`/api/lab/records?${params}`, { cache: "no-store" });
-        const result = await response.json() as LabData & { error?: string };
-        if (!response.ok) throw new Error(result.error || "Your private record could not be loaded.");
-        loaded.records.push(...(result.records ?? [])); loaded.events.push(...(result.events ?? [])); cursor = result.nextCursor ?? null;
-      } while (cursor);
-      viewCache.current.set(key, loaded); setData(loaded);
-    } catch (error) { setNotice(error instanceof Error ? error.message : "Your private record could not be loaded."); }
-    finally { setLoading(false); }
+      const [assignmentResponse, bootstrapResponse] = await Promise.all([
+        fetch("/api/lab/assignment/today", { cache: "no-store" }),
+        fetch("/api/lab/bootstrap", { cache: "no-store" }),
+      ]);
+      const assignmentResult = await assignmentResponse.json() as TodayAssignmentResponse & { error?: string };
+      const bootstrapResult = await bootstrapResponse.json() as Bootstrap & { error?: string };
+      if (!bootstrapResponse.ok) throw new Error(bootstrapResult.error || "The private Lab could not start.");
+      setBootstrap(bootstrapResult);
+      if (!assignmentResponse.ok) throw new Error(assignmentResult.error || "Today’s assignment is not available yet.");
+      setLearnerDate(assignmentResult.learnerDate); setTimezone(assignmentResult.timezone);
+      setAssignment(assignmentResult.assignment ? {
+        ...assignmentResult.assignment,
+        learnerDate: assignmentResult.learnerDate,
+        timezone: assignmentResult.timezone,
+        profileVersion: assignmentResult.profile?.version ?? assignmentResult.assignment.profileVersion ?? "unknown",
+        practiceMode: assignmentResult.profile?.practiceMode ?? assignmentResult.assignment.practiceMode ?? "Normal Week",
+        events: assignmentResult.assignment.events ?? [],
+      } : null);
+    } catch (caught) {
+      setAssignment(null);
+      setAssignmentError(caught instanceof Error && caught.message.includes("No active Lab Profile")
+        ? "Your daily schedule has not been connected on this Mac yet. You can still talk to Luna or open More to choose a practice mode."
+        : caught instanceof Error ? caught.message : "Today’s assignment is not available yet.");
+    } finally { setAssignmentLoading(false); }
   }
 
-  async function loadAssignment() {
-    setAssignmentError("");
+  async function loadWork() {
+    setWorkLoading(true);
     try {
-      const response = await fetch("/api/lab/assignment/today", { cache: "no-store" });
-      const result = await response.json() as TodayAssignmentResponse & { error?: string };
-      if (!response.ok) throw new Error(result.error || "Your private assignment could not be loaded.");
-      setLearnerDate(result.learnerDate); setTimezone(result.timezone);
-      setAssignment(result.assignment ? { ...result.assignment, learnerDate: result.learnerDate, timezone: result.timezone, profileVersion: result.profile?.version ?? result.assignment.profileVersion ?? "unknown", practiceMode: result.profile?.practiceMode ?? result.assignment.practiceMode ?? "Normal Week", events: result.assignment.events ?? [] } : null);
-    } catch (error) { setAssignment(null); setAssignmentError(error instanceof Error ? error.message : "Your private assignment could not be loaded."); }
+      const params = new URLSearchParams({ types: WORK_RECORD_TYPES.join(","), limit: "60" });
+      const response = await fetch(`/api/lab/records?${params}`, { cache: "no-store" });
+      const result = await response.json() as { records?: LabRecord[] };
+      if (response.ok) setRecords(result.records ?? []);
+    } finally { setWorkLoading(false); }
   }
 
   async function loadAssignmentHistory() {
-    try {
-      const response = await fetch("/api/lab/assignments/history", { cache: "no-store" });
-      const result = await response.json() as { assignments?: AssignmentHistoryItem[]; error?: string };
-      if (!response.ok) throw new Error(result.error || "Assignment history could not be loaded.");
-      setAssignmentHistory(result.assignments ?? []); setAssignmentHistoryError("");
-    } catch (error) { setAssignmentHistory([]); setAssignmentHistoryError(error instanceof Error ? error.message : "Assignment history could not be loaded."); }
+    const response = await fetch("/api/lab/assignments/history", { cache: "no-store" });
+    const result = await response.json() as { assignments?: AssignmentHistoryItem[] };
+    if (response.ok) setAssignmentHistory(result.assignments ?? []);
   }
 
+  useEffect(() => { const timer = window.setTimeout(() => void loadToday(), 0); return () => window.clearTimeout(timer); }, []);
   useEffect(() => {
-    const timer = window.setTimeout(() => { void loadRecords(view); if (view === "today" || view === "brief") void loadAssignment(); if (view === "history") void loadAssignmentHistory(); }, 0);
+    const timer = window.setTimeout(() => {
+      if (view === "work") void loadWork();
+      if (view === "record") void loadAssignmentHistory();
+    }, 0);
     return () => window.clearTimeout(timer);
   }, [view]);
 
-  async function post(body: Record<string, unknown>) {
-    setBusy(true); setNotice("");
-    try {
-      const response = await fetch("/api/lab", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      const result = await response.json() as { error?: string; record?: LabRecord; event?: LabEvent };
-      if (!response.ok) throw new Error(result.error || "The record could not be preserved.");
-      viewCache.current.clear();
-      if (result.record) setData((current) => ({ ...current, records: [result.record!, ...current.records.filter((record) => record.id !== result.record!.id)] }));
-      if (result.event) setData((current) => ({ ...current, events: [...current.events.filter((event) => event.id !== result.event!.id), result.event!] }));
-      setNotice("Preserved in your private, append-only record."); return true;
-    } catch (error) { setNotice(error instanceof Error ? error.message : "The record could not be preserved."); return false; }
-    finally { setBusy(false); }
+  const filteredGroups = useMemo(() => CAPABILITY_GROUPS.map((group) => ({
+    ...group,
+    workflows: group.workflows.filter((workflow) => {
+      const contract = WORKFLOW_CONTRACTS[workflow];
+      return `${contract.label} ${contract.description}`.toLowerCase().includes(search.trim().toLowerCase());
+    }),
+  })).filter((group) => group.workflows.length), [search]);
+
+  function navigate(destination: PrimaryDestination) {
+    setLegacyView(null); setDirectWorkflow(null); setView(destination);
   }
 
-  async function appendAssignmentEvent(recordId: string, eventType: string, eventData: Record<string, unknown>) {
-    const saved = await post({ operation: "append_event", recordId, eventType, eventData });
-    if (saved) {
-      await loadAssignment();
-      setNotice(eventType === "completion"
-        ? "Today’s Brief is complete. The original assignment and every response remain preserved."
-        : "Independent First Pass preserved beside the original reading.");
-    }
-    return saved;
+  function talkThrough(workflow: ConversationWorkflow) {
+    setDirectWorkflow(workflow); setLegacyView(null); setView("today");
   }
 
-  function navigate(nextView: View) { setAdvancedEntryVisible(false); setView(nextView); }
-  function openTeacher(workflow?: ConversationWorkflow) { if (workflow) setTeacherWorkflow(workflow); setView("teacher"); }
-  if (advancedFormViews.has(view)) return <Suspense fallback={<div className="lab-loading" role="status">Opening advanced judgment workspace…</div>}><AdvancedFormsView displayName={displayName} initialView={view} /></Suspense>;
-  const entryWorkflow = viewWorkflows[view];
+  if (legacyView) return <Suspense fallback={<div className="lab-loading" role="status">Opening advanced entry…</div>}>
+    <AdvancedFormsView displayName={displayName} initialView={legacyView} onExit={navigate} />
+  </Suspense>;
 
   return <div className="lab-shell">
-    <aside className="rail"><button className="brand" onClick={() => navigate("today")} aria-label="Venture Judgment Lab home"><span className="brand-mark">VJ</span><span><strong>Venture</strong><em>Judgment Lab</em></span></button><nav aria-label="Lab workspaces">{navItems.map((item) => <button className={view === item.id ? "active" : ""} key={item.id} onClick={() => navigate(item.id)}><span className="nav-key">{item.key}</span><span><strong>{item.label}</strong><small>{item.hint}</small></span></button>)}</nav><div className="rail-foot"><span className="privacy-dot" /><span><strong>Private local record</strong><small>Bound to this Mac</small></span></div></aside>
-    <main className="workspace"><header className="topbar"><div><span className="eyebrow">{formatDate(learnerDate, timezone)}</span><h1>{view === "today" ? `Good morning, ${displayName}.` : navItems.find((item) => item.id === view)?.label}</h1></div><span className="mode-chip">Local Lab</span></header>
-      {notice ? <div className="notice" role="status">{notice}</div> : null}
-      {entryWorkflow ? <Suspense fallback={null}><TeacherEntrySurface workflow={entryWorkflow} advancedVisible={advancedEntryVisible} onOpen={() => openTeacher(entryWorkflow)} onToggleAdvanced={() => setAdvancedEntryVisible((current) => !current)} /></Suspense> : null}
-      {view === "today" ? <section className="view today-view"><Suspense fallback={<div className="teacher-launcher"><p>Opening Teacher…</p></div>}><TeacherLauncherSurface onOpen={openTeacher} /></Suspense><DailyAssignmentView assignment={assignment} error={assignmentError} loading={loading} variant="today" onOpenBrief={() => navigate("brief")} onRetry={() => void loadAssignment()} /></section> : null}
-      {view === "teacher" ? <section className="view"><Suspense fallback={<div className="lab-loading" role="status">Opening Teacher…</div>}><TeacherSurface key={teacherWorkflow} initialWorkflow={teacherWorkflow} onCommitted={() => loadRecords(view)} /></Suspense></section> : null}
-      {view === "brief" ? <section className="view"><DailyAssignmentView assignment={assignment} error={assignmentError} loading={loading} variant="brief" onOpenBrief={() => undefined} onRetry={() => void loadAssignment()} onAppendEvent={appendAssignmentEvent} /></section> : null}
-      {view === "source" && advancedEntryVisible ? <Suspense fallback={<div className="lab-loading">Opening Sourcing…</div>}><SourcingView records={data.records} events={data.events} timezone={timezone} busy={busy} post={post} announce={setNotice} /></Suspense> : null}
-      {view === "recruit" && advancedEntryVisible ? <Suspense fallback={<div className="lab-loading">Opening Recruiting…</div>}><RecruitingView records={data.records} timezone={timezone} busy={busy} post={post} announce={setNotice} /></Suspense> : null}
-      {view === "diligence" && advancedEntryVisible ? <Suspense fallback={<div className="lab-loading">Opening Diligence…</div>}><DiligenceView records={data.records} timezone={timezone} busy={busy} post={post} announce={setNotice} /></Suspense> : null}
-      {view === "coach" && advancedEntryVisible ? <Suspense fallback={<div className="lab-loading">Opening Coach…</div>}><CoachView records={data.records} timezone={timezone} busy={busy} post={post} announce={setNotice} /></Suspense> : null}
-      {entryWorkflow && !advancedEntryVisible ? <section className="view"><div className="empty-state"><span>AI</span><h3>Start with your own reasoning.</h3><p>The advanced structured form stays unloaded until you choose it.</p><button className="primary" onClick={() => openTeacher(entryWorkflow)}>Talk to Teacher</button></div></section> : null}
-      {view === "history" ? <section className="view"><div className="intro-row"><div><span className="eyebrow coral">Private Learning Record</span><h2>Originals stay. Updates accumulate.</h2></div><p>Later evidence appends; nothing rewrites the original.</p></div><section className="delivery-ledger" aria-labelledby="daily-delivery-ledger-title"><div className="delivery-ledger-head"><div><span className="eyebrow">Daily delivery ledger</span><h3 id="daily-delivery-ledger-title">Assignment, operator, and archive evidence</h3></div><p>{assignmentHistory.length} preserved outcomes</p></div>{assignmentHistoryError ? <p role="alert">{assignmentHistoryError}</p> : null}<div className="delivery-ledger-list">{assignmentHistory.map((item) => <article className="delivery-ledger-row" key={item.id}><div><time>{item.learnerDate}</time><strong>{item.evidence.title}</strong><span>{item.state.replaceAll("_", " ")} · {item.profile.practiceMode}</span></div><div><span>Operator slot {formatTime(item.run.scheduledFor)}</span><strong>{item.archive.status === "preserved" ? "Archive preserved" : "Archive pending"}</strong></div></article>)}</div></section><Suspense fallback={<div className="lab-loading">Opening History…</div>}><HistoryView /></Suspense></section> : null}
+    <aside className="rail">
+      <button className="brand" onClick={() => navigate("today")} aria-label="Venture Judgment Lab home"><span className="brand-mark">VJ</span><span><strong>Venture</strong><em>Judgment Lab</em></span></button>
+      <nav aria-label="Lab destinations">{PRIMARY_NAV.map((item) => <button key={item.id} className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => navigate(item.id)} aria-current={view === item.id ? "page" : undefined}><span className="nav-key">{item.key}</span><span><strong>{item.label}</strong><small>{item.hint}</small></span></button>)}</nav>
+      <div className="rail-foot"><span className="privacy-dot" /><span><strong>Private local record</strong><small>Review before preserve</small></span></div>
+    </aside>
+    <main className="workspace">
+      <header className="topbar"><div><span className="eyebrow">{formatDate(learnerDate, timezone)}</span><h1>{view === "today" ? `Good morning, ${displayName}.` : PRIMARY_NAV.find((item) => item.id === view)?.label}</h1></div><button className="mode-chip" onClick={() => navigate("more")}><span>{bootstrap?.profile?.practiceMode ?? "Local Lab"}</span><strong>{bootstrap?.counts.records ?? 0}</strong></button></header>
+
+      {view === "today" && <section className="view chat-first-view">
+        <Suspense fallback={<div className="lab-loading" role="status">Opening Luna…</div>}><ConversationTeacher key={directWorkflow ?? "luna-home"} initialWorkflow={directWorkflow ?? "snapshot_judgment"} directStart={Boolean(directWorkflow)} onCommitted={loadWork} /></Suspense>
+        <aside className="today-context"><span className="eyebrow">Today’s context</span>{assignmentLoading ? <p>Checking today’s work…</p> : assignmentError ? <><strong>No daily assignment yet</strong><p>{assignmentError}</p><button className="text-button" onClick={() => navigate("more")}>Open setup and advanced tools →</button></> : assignment ? <><strong>{assignment.state === "ready" ? "Daily Brief ready" : assignment.state.replaceAll("_", " ")}</strong><p>{assignment.brief ? `${assignment.brief.readings.length} readings · ${assignment.brief.totalMinutes} minutes` : assignment.nextAction}</p><button className="text-button" onClick={() => { setLegacyView("brief"); }}>Open the Brief →</button></> : <><strong>No scheduled work</strong><p>Ask Luna what to do next or choose a practice mode in More.</p></>}</aside>
+      </section>}
+
+      {view === "work" && <section className="view"><div className="intro-row"><div><span className="eyebrow coral">Work in motion</span><h2>Continue by status, not by feature.</h2></div><p>Your assignment and recently preserved work are gathered here. Luna remains the default entry.</p></div>
+        <div className="work-grid"><article className="work-primary"><span className="eyebrow">Daily practice</span>{assignmentError ? <><h3>Schedule not connected</h3><p>{assignmentError}</p><button className="primary" onClick={() => navigate("today")}>Ask Luna what to do</button></> : <Suspense fallback={<p>Opening today’s assignment…</p>}><DailyAssignmentView assignment={assignment} loading={assignmentLoading} error="" variant="today" onOpenBrief={() => setLegacyView("brief")} onRetry={loadToday} /></Suspense>}</article><article className="work-summary"><span className="eyebrow">Recent preserved work</span><h3>{workLoading ? "Opening…" : `${records.length} recent records`}</h3><p>Start new work through Luna; inspect immutable evidence in Record.</p><button className="text-button" onClick={() => navigate("record")}>Open Private Learning Record →</button></article></div>
+        <div className="work-list">{records.slice(0, 12).map((record) => <article key={record.id}><span>{recordLabel(record.recordType)}</span><strong>{record.title}</strong><time>{formatDate(record.committedAt, timezone, true)}</time></article>)}</div>
+      </section>}
+
+      {view === "record" && <section className="view"><div className="intro-row"><div><span className="eyebrow coral">Private Learning Record</span><h2>Originals stay. Updates accumulate.</h2></div><p>Search committed evidence, transcripts, and assignment outcomes without rewriting history.</p></div>{assignmentHistory.length > 0 && <section className="record-delivery"><span className="eyebrow">Recent assignment outcomes</span>{assignmentHistory.slice(0, 4).map((item) => <article key={item.id}><time>{item.learnerDate}</time><strong>{item.evidence.title}</strong><span>{item.state.replaceAll("_", " ")} · {item.archive.status}</span></article>)}</section>}<Suspense fallback={<div className="lab-loading">Opening your record…</div>}><HistoryView /></Suspense></section>}
+
+      {view === "more" && <section className="view"><div className="intro-row"><div><span className="eyebrow coral">Capabilities and escape hatches</span><h2>Everything is still here—when you need it.</h2></div><p>Talk through a capability with Luna or open its structured editor directly.</p></div><label className="capability-search">Find a capability<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search Snapshot, recruiting, calibration…" /></label><div className="capability-groups">{filteredGroups.map((group) => <section key={group.label}><h3>{group.label}</h3><div>{group.workflows.map((workflow) => { const contract = WORKFLOW_CONTRACTS[workflow]; return <article key={workflow}><span className="eyebrow">{contract.operation.replaceAll("_", " ")}</span><strong>{contract.label}</strong><p>{contract.description}</p><div><button className="primary" onClick={() => talkThrough(workflow)}>Talk it through</button><button className="text-button" onClick={() => setLegacyView(STRUCTURED_VIEW[workflow])}>Open structured editor</button></div></article>; })}</div></section>)}</div><aside className="privacy-card"><strong>Private and evidence-first</strong><p>Conversation cannot bypass typed validators, publish anything, contact firms, or commit without your explicit confirmation.</p><small>{CONVERSATION_WORKFLOWS.length} approved conversational capabilities · advanced entry remains available</small></aside></section>}
     </main>
   </div>;
 }

@@ -16,6 +16,7 @@ import {
 } from "./founderEvidence";
 import { applySourcingCorrections, currentSourcingStage, sourcingStageIndex } from "./sourcing";
 import type { ConversationWorkflow } from "./conversation";
+import type { PrimaryDestination } from "./LabWorkspace";
 
 const ConversationTeacherSurface = lazy(() => import("./TeacherSurface").then((module) => ({ default: module.ConversationTeacherSurface })));
 const TeacherEntrySurface = lazy(() => import("./TeacherEntrySurface").then((module) => ({ default: module.TeacherEntrySurface })));
@@ -318,7 +319,7 @@ function numberValue(payload: Record<string, unknown>, key: string): number {
   return typeof value === "number" ? value : Number(value || 0);
 }
 
-export function AdvancedFormsView({ displayName, initialView = "snapshot" }: { displayName: string; initialView?: View }) {
+export function AdvancedFormsView({ displayName, initialView = "snapshot", onExit }: { displayName: string; initialView?: View; onExit?: (destination: PrimaryDestination) => void }) {
   const [view, setView] = useState<View>(initialView);
   const [teacherWorkflow, setTeacherWorkflow] = useState<ConversationWorkflow>("snapshot_judgment");
   const [advancedEntryVisible, setAdvancedEntryVisible] = useState(false);
@@ -742,13 +743,18 @@ export function AdvancedFormsView({ displayName, initialView = "snapshot" }: { d
   return (
     <div className="lab-shell">
       <aside className="rail">
-        <button className="brand" onClick={() => setView("today")} aria-label="Venture Judgment Lab home">
+        <button className="brand" onClick={() => onExit ? onExit("today") : setView("today")} aria-label="Venture Judgment Lab home">
           <span className="brand-mark">VJ</span>
           <span><strong>Venture</strong><em>Judgment Lab</em></span>
         </button>
         <nav aria-label="Lab sections">
-          {navItems.map((item) => (
-            <button key={item.id} className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => setView(item.id)} aria-current={view === item.id ? "page" : undefined}>
+          {(onExit ? [
+            { id: "today", key: "T", label: "Today", hint: "Talk through the next step" },
+            { id: "work", key: "W", label: "Work", hint: "Active practice and drafts" },
+            { id: "record", key: "R", label: "Record", hint: "Search what is preserved" },
+            { id: "more", key: "M", label: "More", hint: "Tools and advanced entry" },
+          ] : navItems).map((item) => (
+            <button key={item.id} className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => onExit ? onExit(item.id as PrimaryDestination) : setView(item.id as View)} aria-current={view === item.id ? "page" : undefined}>
               <span className="nav-key">{item.key}</span>
               <span><strong>{item.label}</strong><small>{item.hint}</small></span>
             </button>

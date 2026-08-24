@@ -17,10 +17,12 @@ const labSurface = `${labApp}\n${labWorkspace}\n${advancedForms}`;
 
 test("Today makes conversation primary while every structured workflow remains available", () => {
   assert.match(labSurface, /teacher-launcher|<TeacherLauncher/);
-  assert.match(labSurface, /label: "Teacher"/);
-  assert.match(labSurface, /label: "Sourcing"/);
-  assert.match(labSurface, /TeacherEntrySurface/);
-  assert.match(labSurface, /advancedEntryVisible/);
+  for (const destination of ["Today", "Work", "Record", "More"]) {
+    assert.match(labSurface, new RegExp(`label: "${destination}"`));
+  }
+  assert.doesNotMatch(labApp, /label: "Snapshot"|label: "Forecast"|label: "Diligence"/);
+  assert.match(labSurface, /More/);
+  assert.match(labSurface, /advanced|structured/i);
 });
 
 test("the learner sees one-question conversation, structured review, and explicit confirmation", () => {
@@ -28,9 +30,11 @@ test("the learner sees one-question conversation, structured review, and explici
   assert.match(teacher, /Here’s what I heard/);
   assert.match(teacher, /Edit structured draft/);
   assert.match(teacher, /Confirm and preserve/);
-  assert.match(teacher, /Choose a goal/);
-  assert.match(teacher, /Do today’s work/);
-  assert.match(teacher, /Think through a company/);
+  assert.match(teacher, /What are you working through/);
+  assert.match(teacher, /Using/);
+  assert.doesNotMatch(teacher, /Choose a goal/);
+  assert.doesNotMatch(teacher, /goal-picker/);
+  assert.doesNotMatch(teacher, /workflow-picker/);
   assert.match(teacher, /Talk/);
   assert.match(teacher, /Review/);
   assert.match(teacher, /Preserve/);
