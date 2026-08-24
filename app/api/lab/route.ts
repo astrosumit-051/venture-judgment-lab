@@ -1160,6 +1160,9 @@ export async function POST(request: Request) {
       return Response.json({ error: "A title and structured evidence are required." }, { status: 400 });
     }
     const submittedPracticeDayId = cleanText(submittedPayload.practiceDayId, 80);
+    if (recordType === "forecast" && Object.hasOwn(submittedPayload, "committedLearnerDate")) {
+      return Response.json({ error: "Forecast learner date is derived by the server and cannot be supplied or backdated." }, { status: 400 });
+    }
     if (Object.hasOwn(submittedPayload, "practiceDayId") && !submittedPracticeDayId) {
       return Response.json({ error: "The Practice Day link must be a non-empty immutable record id." }, { status: 400 });
     }
@@ -1252,6 +1255,7 @@ export async function POST(request: Request) {
         return Response.json({ error: "The linked Practice Day was not found in your private curriculum epoch." }, { status: 404 });
       }
       const practiceLearnerDate = cleanText(parseJson(practiceDay.payload_json).learnerDate, 20);
+      const practiceTimezone = cleanText(parseJson(practiceDay.payload_json).timezone, 100);
       const practiceDateKeys: Record<string, string> = {
         sourcing_lead: "discoveredOn",
         recruiting_opportunity: "discoveredOn",
@@ -1265,6 +1269,13 @@ export async function POST(request: Request) {
       const practiceDateKey = practiceDateKeys[recordType];
       if (practiceDateKey && cleanText(payload[practiceDateKey], 20) !== practiceLearnerDate) {
         return Response.json({ error: "Practice Day evidence must preserve the same learner date as its daily route." }, { status: 400 });
+      }
+      if (recordType === "forecast") {
+        if (cleanText(payload.timezone, 100) !== practiceTimezone
+          || dateInTimeZone(new Date(), practiceTimezone) !== practiceLearnerDate) {
+          return Response.json({ error: "A daily Forecast can link only to the currently active Practice Day in its preserved timezone." }, { status: 400 });
+        }
+        payload = { ...payload, committedLearnerDate: practiceLearnerDate };
       }
       payload = { ...payload, practiceDayId: practiceDay.id };
       if (recordType === "sourcing_lead" && cleanText(payload.attributionClass, 100) !== "Independent discovery") {

@@ -36,6 +36,8 @@ only a search surface and falsifiable hypothesis; company names remain withheld.
 - Existing unfinished conversations are preserved by appending a
   `pre_curriculum` abandonment turn when the first epoch is committed.
 - Practice Day links are owner-validated before they can contribute to progress.
+- Daily Forecast links are also chronology-bound: the server derives their
+  learner date and rejects retroactive or cross-timezone Practice Day closure.
 - Daily Operator replay remains checksum-idempotent; legacy v1 assignments
   remain accepted and readable.
 

@@ -272,6 +272,12 @@ const linkedForecastPayload = {
 await lab({
   operation: "commit_record",
   recordType: "forecast",
+  title: "Backdated course-first linked forecast",
+  payload: { ...linkedForecastPayload, committedLearnerDate: "2026-01-01" },
+}, 400);
+await lab({
+  operation: "commit_record",
+  recordType: "forecast",
   title: "Course-first linked forecast",
   payload: linkedForecastPayload,
 });

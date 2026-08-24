@@ -49,3 +49,7 @@ Day 1, notify the learner, or change the hosted Site.
   eligible weekdays, daily company slots and the Snapshot are DB-unique,
   qualification follows Day 30, linked evidence preserves the Practice Day
   date, and API acceptance proves both closed and open completion gates.
+- 2026-08-24: Final scope review found that Forecast lacked a submitted date to
+  compare. The server now rejects supplied/backdated Forecast dates, derives
+  `committedLearnerDate`, and permits the link only on the active Practice Day
+  in its preserved timezone.
