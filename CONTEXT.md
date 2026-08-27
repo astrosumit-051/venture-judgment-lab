@@ -101,11 +101,11 @@ A weekday practice combining the Daily Brief, one rapid early-stage company scre
 _Avoid_: Daily content feed, reading list
 
 **Normal Week**:
-The Lab's default 11.5-hour practice mode: five 90-minute Daily Judgment Loops plus one four-hour flexible weekend block for a Weekly Underwrite, recruiting, and reflection.
+The Lab's default 12-hour practice mode: five 105-minute Daily Routes plus one 195-minute weekend block containing a 135-minute Weekly Underwrite, a 30-minute cross-domain What Next map, and a 30-minute recruiting or field block.
 _Avoid_: Mandatory clock-time schedule, unlimited weekly workload
 
 **Monthly Calibration Week**:
-The once-per-calendar-month 11.5-hour mode that preserves all five Daily Judgment Loops while shortening the Weekly Underwrite to make room for a Calibration Review.
+The once-per-calendar-month 12-hour mode that preserves all five Daily Routes and substitutes a 195-minute weekend block of a 90-minute Underwrite, 60-minute Forecast review, 30-minute causal map, and 15-minute weekly review.
 _Avoid_: Extra calibration hours, hindsight rewrite week
 
 **Recruiting Surge**:

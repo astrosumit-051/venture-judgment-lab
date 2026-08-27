@@ -32,6 +32,9 @@ test("Today is an ordered route with judgment-first company comparison", () => {
   assert.match(today, /Lock judgment/);
   assert.match(today, /Ask Luna \(after lock\)/);
   assert.match(today, /disabled={!snapshotLocked}/);
+  assert.match(today, /selectedSourcingLeadId: selectedCompanyId/);
+  assert.match(today, /practiceDayId: day\.id/);
+  assert.match(today, /Preview only\. No conversation or learner evidence/);
   assert.doesNotMatch(today, /score|rating/i);
 });
 
@@ -45,6 +48,16 @@ test("Practice and Evidence teach course structure and judgment development", ()
   assert.match(evidence, /Reasoning revisions/);
   assert.match(evidence, /Founder evidence/);
   assert.match(evidence, /Sector advantage/);
+  assert.match(evidence, /Original judgment versus later evidence/);
+  assert.match(evidence, /updatedDecisionRule/);
+  assert.match(evidence, /recurringErrorKind/);
+  assert.match(evidence, /sourceLimitations/);
+  assert.doesNotMatch(evidence, /function count/);
+});
+
+test("privacy copy separates the local record from connected-provider processing", () => {
+  assert.match(workspace, /Record stored on this Mac/);
+  assert.doesNotMatch(workspace, /All data stays on this Mac/);
 });
 
 test("the course layout has desktop, tablet, and mobile reflow boundaries", () => {

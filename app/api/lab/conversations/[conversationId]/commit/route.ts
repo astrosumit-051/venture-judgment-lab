@@ -1,6 +1,7 @@
 import { POST as commitLabOperation } from "@/app/api/lab/route";
 import { currentLabOwnerId } from "@/app/labOwner";
 import { WORKFLOW_CONTRACTS } from "@/app/conversation";
+import { applyConversationPracticeContext, practiceContextFromConversation } from "@/app/conversationPracticeContext";
 import {
   completeConversationCommit,
   insertConversationTurn,
@@ -41,7 +42,14 @@ export async function POST(request: Request, context: { params: Promise<{ conver
   if (draft.missingRequirements.length || draft.contradictions.length) {
     return Response.json({ error: "Resolve every missing requirement and contradiction before preserving this record." }, { status: 409 });
   }
-  if (!allowedCommit(conversation.workflow, draft.commitBody)) {
+  const practiceContext = practiceContextFromConversation(conversation);
+  const contextualized = practiceContext
+    ? applyConversationPracticeContext(conversation.workflow, draft.commitBody, practiceContext)
+    : { commitBody: draft.commitBody };
+  if (contextualized.error || !contextualized.commitBody) {
+    return Response.json({ error: contextualized.error ?? "The Practice Day context could not be preserved." }, { status: 400 });
+  }
+  if (!allowedCommit(conversation.workflow, contextualized.commitBody)) {
     return Response.json({ error: "The conversation draft does not match its declared Lab workflow." }, { status: 400 });
   }
   const reservation = await reserveConversationCommit(db, conversationId, owner, new Date().toISOString());
@@ -61,7 +69,7 @@ export async function POST(request: Request, context: { params: Promise<{ conver
   const delegatedRequest = new Request(request.url.replace(/\/conversations\/[^/]+\/commit$/, ""), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(draft.commitBody),
+    body: JSON.stringify(contextualized.commitBody),
   });
   let resultResponse: Response;
   try {

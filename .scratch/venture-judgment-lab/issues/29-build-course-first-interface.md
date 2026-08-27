@@ -1,7 +1,7 @@
 # Build the course-first Lab interface
 
 Type: task
-Status: claimed
+Status: resolved
 Parent: ../map.md
 
 ## Question
@@ -45,7 +45,23 @@ Site.
   beside the selected mock at 1488 x 1058, the rail/density/Luna mismatches were
   corrected, mobile and recovery states were exercised, and Product Design QA
   passed. Day 1 activation and the hosted Site remain untouched.
+- 2026-08-26: Independent standards and specification review found and closed
+  the Practice Day conversation-link, preview-mutation, Evidence projection,
+  privacy-copy, partial-record, and canonical-week-language gaps. The final
+  `npm run local:verify` gate passed 81 contract/UI tests plus API, persistence,
+  large-record, responsive, lazy-load, and keyboard browser smoke.
 
 ## Answer
 
-Pending implementation and verification.
+The local Lab is now course-first. Today presents the ordered five-checkpoint
+route and preserves an immutable Practice Day link through sourcing, Snapshot,
+Forecast, and recruiting conversations. Practice exposes the twelve-week and
+exact 720-minute rhythm. Evidence shows original judgment versus Decision
+Delta, Brier calibration, recurring errors and revisions, founder-evidence
+quality, sector-advantage evidence, and linked recruiting evidence without
+activity scoring. More retains all 18 conversational and structured workflows.
+
+The selected desktop mock passed same-viewport Product Design QA, the mobile
+route has no document overflow, preview sample data cannot create learner
+evidence, and connected-provider data handling is disclosed precisely. The
+hosted Site and deliberate Day 1 curriculum activation remain untouched.

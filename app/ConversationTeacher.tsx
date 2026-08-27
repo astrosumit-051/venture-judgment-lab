@@ -7,6 +7,7 @@ import {
   type ConversationWorkflow,
   type LearningConversation,
 } from "./conversation";
+import type { ConversationPracticeContext } from "./conversationPracticeContext";
 
 type ApiResult = { conversation?: LearningConversation; conversations?: LearningConversation[]; error?: string; preserved?: boolean };
 type RouteResult =
@@ -47,12 +48,14 @@ export function ConversationTeacher({
   initialConversationId,
   directStart = false,
   initialOpeningMessage = "",
+  practiceContext,
   onCommitted,
 }: {
   initialWorkflow?: ConversationWorkflow;
   initialConversationId?: string | null;
   directStart?: boolean;
   initialOpeningMessage?: string;
+  practiceContext?: ConversationPracticeContext | null;
   onCommitted?: () => void | Promise<void>;
 }) {
   const [conversations, setConversations] = useState<LearningConversation[]>([]);
@@ -102,7 +105,7 @@ export function ConversationTeacher({
     try {
       const response = await fetch("/api/lab/conversations", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ workflow: selectedWorkflow, ...(openingMessage ? { openingMessage } : {}) }),
+        body: JSON.stringify({ workflow: selectedWorkflow, ...(openingMessage ? { openingMessage } : {}), ...(practiceContext ? { practiceContext } : {}) }),
       });
       const result = await response.json() as ApiResult;
       if (result.conversation) setConversation(result.conversation);
@@ -212,7 +215,7 @@ export function ConversationTeacher({
   }
 
   if (!conversation) return <section className="conversation-teacher conversation-home">
-    <div className="conversation-intro"><div><span className="eyebrow coral">Luna · Conversational Teacher</span><h2>What are you working through?</h2><p>Write naturally. Luna will choose the right Lab capability, ask one useful question at a time, and show what it heard before anything becomes permanent.</p></div></div>
+    <div className="conversation-intro"><div><span className="eyebrow coral">Luna · Conversational Teacher</span><h2>What are you working through?</h2><p>Write naturally. Luna will choose the right Lab capability, ask one useful question at a time, and show what it heard before anything becomes permanent.</p><small>Your record is stored locally. When Luna is connected, conversation text is sent to the configured AI provider for a response.</small></div></div>
     {error && <div className="conversation-error" role="alert">{error}</div>}
     {directStart && <div className="route-reply direct-capability"><span className="eyebrow coral">Ready to use</span><p><strong>{WORKFLOW_CONTRACTS[workflow].label}</strong> · {WORKFLOW_CONTRACTS[workflow].description}</p>{initialOpeningMessage && <small>Your local route draft will become the preserved opening thought when you start.</small>}<button className="primary" disabled={busy} onClick={() => void start(workflow, initialOpeningMessage)}>{busy ? "Opening…" : "Start this conversation"}</button></div>}
     <form className="intent-composer" onSubmit={(event) => void routeIntent(event)}><label htmlFor="luna-intent"><span>Talk to Luna</span><textarea id="luna-intent" rows={5} value={routeMessage} onChange={(event) => setRouteMessage(event.target.value)} placeholder="Try: I found a startup at demo day, help me judge a company, or what should I do today?" /></label><button className="primary" disabled={busy || !routeMessage.trim()}>{busy ? "Finding the right path…" : "Continue"} <span>→</span></button><small>Luna can organize and preserve your reasoning. It cannot contact anyone or submit anything.</small></form>

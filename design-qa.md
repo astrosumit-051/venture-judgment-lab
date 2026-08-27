@@ -30,6 +30,9 @@
 - [P2] Header and route typography initially pushed the course below the fold.
   The final header, rotation title, and horizontal rhythm match the reference
   proportions without reducing legibility.
+- [P1] Review found that the visual-preview companies could enter a real
+  conversation. Preview mutation is now disabled while local draft behavior
+  remains testable.
 
 No P0, P1, or P2 visual mismatch remains in the accepted state.
 
@@ -50,9 +53,12 @@ No P0, P1, or P2 visual mismatch remains in the accepted state.
 
 - Today, Practice, Evidence, and More navigation all rendered their intended
   destinations in the selected in-app browser.
-- The Reading and Scan accordions opened correctly; company selection, causal
-  draft save, and Snapshot conversation handoff worked without preserving fake
-  preview evidence.
+- The Reading and Scan accordions opened correctly; company selection and local
+  causal-draft save worked, while every preview-to-record handoff stayed
+  disabled.
+- The daily Snapshot, Forecast, sourcing, and recruiting handoffs now carry a
+  server-validated immutable Practice Day context. Unit and release tests cover
+  deterministic context injection without relying on sample evidence.
 - Luna remained disabled before Snapshot lock.
 - The non-preview route rendered an explicit recovery state with Retry and Luna
   fallback actions while Day 1 remains unstarted.
@@ -60,6 +66,9 @@ No P0, P1, or P2 visual mismatch remains in the accepted state.
   overflow; the comparison table remains intentionally scrollable within its
   own bounded surface.
 - Browser console warnings/errors: none.
+- Evidence rendered original-versus-later judgment, Brier, recurring-error,
+  founder-evidence, and sector-advantage projections with honest empty states;
+  it no longer substitutes record counts for judgment quality.
 - The release browser smoke verified keyboard focus, lazy-loaded advanced
   surfaces, mobile navigation fit, and large-record pagination.
 

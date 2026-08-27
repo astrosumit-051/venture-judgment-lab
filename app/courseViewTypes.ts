@@ -37,6 +37,7 @@ export type PracticeDay = {
 export type CourseRecord = {
   id: string;
   recordType: string;
+  parentId?: string | null;
   title: string;
   payload: Record<string, unknown>;
   committedAt: string;
