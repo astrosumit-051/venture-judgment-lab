@@ -12,7 +12,7 @@ const assignmentEventView = await readFile(new URL("../app/AssignmentEventView.t
 test("Today and Brief read the authenticated daily assignment without a static Brief fallback", () => {
   assert.doesNotMatch(labApp, /import\s+\{\s*dailyBrief\s*\}/);
   assert.match(labWorkspace, /fetch\("\/api\/lab\/assignment\/today"/);
-  assert.match(labWorkspace, /<DailyAssignmentView/);
+  assert.match(labWorkspace, /<CourseTodayView/);
   assert.match(advancedForms, /onAppendEvent=\{appendAssignmentEvent\}/);
 });
 
@@ -47,8 +47,8 @@ test("completion requires one learner response overlay for each of four current 
   assert.match(assignmentView, /A response to one source cannot stand in for another/);
 });
 
-test("History exposes the owner-scoped Daily Assignment and archive ledger", () => {
-  assert.match(labSurface, /Recent assignment outcomes/);
+test("Evidence exposes the owner-scoped Daily Assignment and archive ledger", () => {
+  assert.match(labSurface, /Recent route outcomes/);
   assert.match(labSurface, /assignmentHistory\.slice/);
   assert.match(labSurface, /item\.archive\.status/);
 });

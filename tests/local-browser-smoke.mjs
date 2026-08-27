@@ -175,31 +175,29 @@ try {
 
   await Promise.all([cdp("Page.enable"), cdp("Runtime.enable"), cdp("Network.enable")]);
   const launchStarted = performance.now();
-  await cdp("Page.navigate", { url: baseUrl });
-  await waitForExpression("document.title === 'Venture Judgment Lab' && Boolean(document.body?.innerText.includes('Good morning')) && document.body?.innerText.includes('What are you working through?')");
+  await cdp("Page.navigate", { url: `${baseUrl}/?coursePreview=1` });
+  await waitForExpression("document.title === 'Venture Judgment Lab' && Boolean(document.body?.innerText.includes('Good morning')) && document.body?.innerText.includes('AI & Data Systems Rotation')");
   const usableMs = performance.now() - launchStarted;
   assert.ok(usableMs < 2_000, `Warm local launch became usable in ${usableMs.toFixed(1)}ms.`);
   assert.equal(await evaluate("document.body.innerText.trim().length > 0"), true, "The Today shell must not be blank.");
   assert.equal(await evaluate("Boolean(document.querySelector('[data-nextjs-dialog], .vite-error-overlay, #webpack-dev-server-client-overlay'))"), false, "The browser must not show a framework error overlay.");
-  assert.equal(requestedUrls.some((url) => url.includes("LabWorkspace")), true, "The chat-first workspace must load as the primary shell.");
-  assert.deepEqual(await evaluate("[...document.querySelectorAll('nav button strong')].map((item) => item.textContent)"), ["Today", "Work", "Record", "More"], "The permanent navigation must expose exactly four destinations.");
+  assert.equal(requestedUrls.some((url) => url.includes("LabWorkspace")), true, "The course-first workspace must load as the primary shell.");
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('nav button strong')].map((item) => item.textContent)"), ["Today", "Practice", "Evidence", "More"], "The permanent navigation must expose exactly four course destinations.");
   assert.equal(await evaluate("Boolean(document.querySelector('.goal-picker, .workflow-picker'))"), false, "Today must not expose the old workflow chooser.");
 
-  await evaluate(`(() => { const input = document.querySelector('#luna-intent'); const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; setter.call(input, 'FORCE_PROVIDER_FAILURE — I found a startup at a university demo day'); input.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-  await clickButton("Continue");
-  await waitForExpression("Boolean(document.querySelector('[role=alert]')) && document.body.innerText.includes('preserved')");
-  await waitForExpression("document.body.innerText.toLowerCase().includes('using') && document.body.innerText.includes('Sourcing lead')");
-  assert.equal(await evaluate("document.body.innerText.toLowerCase().includes('using') && document.body.innerText.includes('Sourcing lead')"), true, "Luna must reveal the inferred capability.");
-  assert.equal(await evaluate("document.body.innerText.includes('FORCE_PROVIDER_FAILURE — I found a startup at a university demo day')"), true, "The routed opening thought must remain visible after a provider outage.");
-  assert.equal(await evaluate("[...document.querySelectorAll('button')].some((button) => button.textContent.includes('Try again'))"), true, "The provider outage must expose a recoverable retry action.");
+  assert.equal(await evaluate("document.querySelectorAll('.comparison-head button').length"), 3, "The expanded checkpoint must compare exactly three independently discovered companies.");
+  assert.equal(await evaluate("document.body.innerText.includes('Your judgment comes first.')"), true, "Today must explain the pre-lock Luna boundary.");
+  assert.equal(await evaluate("document.querySelector('.luna-boundary button').disabled"), true, "Luna investment interpretation must remain disabled before Snapshot lock.");
+  await evaluate(`(() => { const input = document.querySelector('.causal-judgment textarea'); const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; setter.call(input, 'Runtime governance becomes a budgeted security control if security teams own deployment and model platforms do not absorb the workflow.'); input.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+  await clickButton("Save draft");
+  await waitForExpression("document.body.innerText.includes('Draft saved on this Mac')");
+  assert.equal(await evaluate("Boolean(localStorage.getItem('vc-lab-causal-draft:visual-preview-day'))"), true, "Causal judgment draft must remain locally recoverable without being committed.");
 
   await evaluate("[...document.querySelectorAll('nav button')][0].focus(); true");
   await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
   await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
   assert.equal(await evaluate("document.activeElement?.tagName === 'BUTTON'"), true, "Keyboard navigation must retain a visible button focus target.");
 
-  await clickButton("Start something else");
-  await waitForExpression("document.body.innerText.includes('What are you working through?')");
   await clickNav("More");
   await waitForExpression("document.body.innerText.includes('Everything is still here') && document.querySelectorAll('.capability-groups article').length === 18");
   assert.equal(await evaluate("Boolean(document.querySelector('.capability-search input'))"), true, "More must provide searchable capability access.");
@@ -211,10 +209,10 @@ try {
   assert.ok(feedbackMs < 100, `Navigation visual feedback took ${feedbackMs.toFixed(1)}ms.`);
   await waitForExpression("document.body.innerText.includes('Commit before you know everything.')");
   assert.equal(requestedUrls.some((url) => url.includes("AdvancedFormsView")), true, "Advanced forms must load only after an advanced workflow opens.");
-  assert.deepEqual(await evaluate("[...document.querySelectorAll('nav button strong')].map((item) => item.textContent)"), ["Today", "Work", "Record", "More"], "Advanced entry must retain the four permanent destinations.");
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('nav button strong')].map((item) => item.textContent)"), ["Today", "Practice", "Evidence", "More"], "Advanced entry must retain the four permanent destinations.");
 
-  await clickNav("Work");
-  await waitForExpression("document.body.innerText.includes('Continue by status, not by feature.')");
+  await clickNav("Practice");
+  await waitForExpression("document.body.innerText.toLowerCase().includes('twelve-week course map') && document.body.innerText.includes('720 minutes')");
 
   await cdp("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await waitForExpression("document.querySelectorAll('nav button').length === 4");
@@ -224,7 +222,9 @@ try {
   const databasePath = await findD1File(localData);
   assert.ok(databasePath, "The browser gate must locate its disposable local D1 database.");
   seedLargeArchive(databasePath);
-  await clickNav("Record");
+  await clickNav("Evidence");
+  await waitForExpression("document.body.innerText.includes('Evidence of better judgment.') && document.body.innerText.toLowerCase().includes('decision delta')", 200);
+  await clickButton("Open immutable history");
   await waitForExpression("document.body.innerText.includes('Originals stay. Updates accumulate.') && document.body.innerText.includes('25+ immutable submissions')", 200);
   assert.equal(requestedUrls.some((url) => url.includes("HistoryView")), true, "History must load its own view module.");
   assert.equal(await evaluate("document.body.innerText.includes('HelioGrid — Watch at 62%')"), true, "A realistic archive record must render in History.");
@@ -236,7 +236,7 @@ try {
   assert.ok(paginationMs < 300, `Large History browser pagination took ${paginationMs.toFixed(1)}ms.`);
   const warmedHistoryRequests = await evaluate("performance.getEntriesByType('resource').filter((entry) => entry.name.includes('/api/lab/history')).map((entry) => entry.duration)");
   assert.ok(warmedHistoryRequests.every((duration) => duration < 300), `Warmed History requests exceeded 300ms: ${warmedHistoryRequests.join(', ')}`);
-  console.log(`Local browser smoke passed: usable in ${usableMs.toFixed(1)}ms; four-destination navigation and advanced-entry feedback in ${feedbackMs.toFixed(1)}ms; 10,000-record pagination in ${paginationMs.toFixed(1)}ms; routed provider recovery, mobile fit, lazy modules, and keyboard focus verified.`);
+  console.log(`Local browser smoke passed: usable in ${usableMs.toFixed(1)}ms; course-first route, local judgment draft, four-destination navigation, advanced-entry feedback in ${feedbackMs.toFixed(1)}ms; 10,000-record pagination in ${paginationMs.toFixed(1)}ms; mobile fit, lazy modules, and keyboard focus verified.`);
 } finally {
   if (socket?.readyState === WebSocket.OPEN) socket.close();
   const chromeExit = new Promise((resolve) => chrome.once("exit", resolve));

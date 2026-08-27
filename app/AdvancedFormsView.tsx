@@ -17,6 +17,7 @@ import {
 import { applySourcingCorrections, currentSourcingStage, sourcingStageIndex } from "./sourcing";
 import type { ConversationWorkflow } from "./conversation";
 import type { PrimaryDestination } from "./LabWorkspace";
+import { Archive, CalendarCheck, Compass, HouseLine } from "@phosphor-icons/react";
 
 const ConversationTeacherSurface = lazy(() => import("./TeacherSurface").then((module) => ({ default: module.ConversationTeacherSurface })));
 const TeacherEntrySurface = lazy(() => import("./TeacherEntrySurface").then((module) => ({ default: module.TeacherEntrySurface })));
@@ -95,6 +96,13 @@ const navItems: Array<{ id: View; key: string; label: string; hint: string }> = 
   { id: "plan", key: "P", label: "Practice", hint: "Choose the week mode" },
   { id: "history", key: "H", label: "History", hint: "Nothing rewritten" },
 ];
+
+const primaryExitNav = [
+  { id: "today", icon: HouseLine, label: "Today", hint: "Your daily route" },
+  { id: "practice", icon: Compass, label: "Practice", hint: "Decision drills" },
+  { id: "evidence", icon: CalendarCheck, label: "Evidence", hint: "Your record" },
+  { id: "more", icon: Archive, label: "More", hint: "Tools and research" },
+] as const;
 
 const viewWorkflows: Partial<Record<View, ConversationWorkflow>> = {
   source: "sourcing_lead",
@@ -748,17 +756,13 @@ export function AdvancedFormsView({ displayName, initialView = "snapshot", onExi
           <span><strong>Venture</strong><em>Judgment Lab</em></span>
         </button>
         <nav aria-label="Lab sections">
-          {(onExit ? [
-            { id: "today", key: "T", label: "Today", hint: "Talk through the next step" },
-            { id: "work", key: "W", label: "Work", hint: "Active practice and drafts" },
-            { id: "record", key: "R", label: "Record", hint: "Search what is preserved" },
-            { id: "more", key: "M", label: "More", hint: "Tools and advanced entry" },
-          ] : navItems).map((item) => (
-            <button key={item.id} className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => onExit ? onExit(item.id as PrimaryDestination) : setView(item.id as View)} aria-current={view === item.id ? "page" : undefined}>
-              <span className="nav-key">{item.key}</span>
+          {(onExit ? primaryExitNav : navItems).map((item) => {
+            const Icon = "icon" in item ? item.icon : null;
+            return <button key={item.id} className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => onExit ? onExit(item.id as PrimaryDestination) : setView(item.id as View)} aria-current={view === item.id ? "page" : undefined}>
+              <span className="nav-key">{Icon ? <Icon size={20} /> : "key" in item ? item.key : ""}</span>
               <span><strong>{item.label}</strong><small>{item.hint}</small></span>
-            </button>
-          ))}
+            </button>;
+          })}
         </nav>
         <div className="rail-foot"><span className="privacy-dot" /><span><strong>Private record</strong><small>Append-only by design</small></span></div>
       </aside>

@@ -19,9 +19,9 @@ const [commitRoute, createRoute, intentRoute] = await Promise.all([
 ]);
 const labSurface = `${labApp}\n${labWorkspace}\n${advancedForms}`;
 
-test("Today makes conversation primary while every structured workflow remains available", () => {
-  assert.match(labSurface, /teacher-launcher|<TeacherLauncher/);
-  for (const destination of ["Today", "Work", "Record", "More"]) {
+test("Today makes the course primary while every conversational workflow remains available", () => {
+  assert.match(labSurface, /CourseTodayView/);
+  for (const destination of ["Today", "Practice", "Evidence", "More"]) {
     assert.match(labSurface, new RegExp(`label: "${destination}"`));
   }
   assert.doesNotMatch(labApp, /label: "Snapshot"|label: "Forecast"|label: "Diligence"/);

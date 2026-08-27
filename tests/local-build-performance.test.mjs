@@ -15,7 +15,7 @@ const workspaceBytes = (await stat(new URL(`dist/client/${workspaceEntry.file}`,
 assert.ok(appBytes < 25_000, `The eager Lab shell is ${appBytes} bytes; budget is 25,000 bytes.`);
 assert.ok(workspaceBytes < 120_000, `The advanced Lab workspace is ${workspaceBytes} bytes; budget is 120,000 bytes.`);
 
-for (const lazySurface of ["app/ConversationTeacher.tsx", "app/AdvancedFormsView.tsx", "app/DailyAssignmentView.tsx", "app/HistoryView.tsx"]) {
+for (const lazySurface of ["app/ConversationTeacher.tsx", "app/AdvancedFormsView.tsx"]) {
   assert.ok(workspaceEntry.dynamicImports?.includes(lazySurface), `${lazySurface} must remain view-loaded.`);
 }
 
@@ -33,4 +33,4 @@ const localRunner = await readFile(new URL("scripts/start-local.mjs", root), "ut
 assert.match(localRunner, /Only --port is supported/);
 assert.doesNotMatch(localRunner, /\.\.\.process\.argv\.slice\(2\)/, "Local arguments must not be able to override loopback-only Wrangler flags.");
 
-console.log(`Local build performance passed: eager Lab shell ${(appBytes / 1024).toFixed(1)} KiB; chat-first workspace ${(workspaceBytes / 1024).toFixed(1)} KiB with four view-loaded modules.`);
+console.log(`Local build performance passed: eager Lab shell ${(appBytes / 1024).toFixed(1)} KiB; course-first workspace ${(workspaceBytes / 1024).toFixed(1)} KiB with conversational and advanced surfaces view-loaded.`);
